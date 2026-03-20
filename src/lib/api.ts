@@ -1,0 +1,93 @@
+import { Account, LogEntry, PoolSettings, Task } from '@/types';
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    headers: {
+      'Content-Type': 'application/json',
+      ...(init?.headers || {}),
+    },
+    ...init,
+  });
+
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({ message: response.statusText }));
+    throw new Error(payload.message || 'Request failed');
+  }
+
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
+  return response.json();
+}
+
+export const api = {
+  listAccounts: () => request<Account[]>('/api/accounts'),
+  createAccount: (payload: Pick<Account, 'account_id' | 'email' | 'auth_type' | 'auth_file_path'>) => request<Account>('/api/accounts', { method: 'POST', body: JSON.stringify(payload) }),
+  updateAccountAction: (id: string, action: 'setActive' | 'pause' | 'reset') => request<Account>(`/api/accounts/${id}`, { method: 'PATCH', body: JSON.stringify({ action }) }),
+  deleteAccount: (id: string) => request<void>(`/api/accounts/${id}`, { method: 'DELETE' }),
+  clearAllAccounts: () => request<void>('/api/accounts', { method: 'DELETE' }),
+  checkAccountUsage: (id: string) => request<{
+    ok: boolean;
+    status?: number;
+    rate_limited?: boolean;
+    retry_after?: string | null;
+    error?: string;
+    rate_limit?: {
+      limit_requests?: string | null;
+      remaining_requests?: string | null;
+      reset_requests?: string | null;
+      limit_tokens?: string | null;
+      remaining_tokens?: string | null;
+    } | null;
+  }>(`/api/accounts/${id}/check-usage`, { method: 'POST' }),
+  getAccountAuthInfo: (id: string) => request<{
+    email?: string;
+    plan_type?: string;
+    token_expires_at?: string;
+    last_refresh?: string;
+    usage?: {
+      plan?: string;
+      is_paid?: boolean;
+      message_cap?: number | null;
+      message_cap_rollover?: string | null;
+    } | null;
+    error?: string;
+    path?: string;
+  }>(`/api/accounts/${id}/auth-info`),
+  listTasks: () => request<Task[]>('/api/tasks'),
+  createTask: (payload: { description: string; priority: Task['priority']; account: string }) => request<Task>('/api/tasks', { method: 'POST', body: JSON.stringify(payload) }),
+  batchRetryTasks: (ids: string[]) => request<{ updated: number }>('/api/tasks/batch-retry', { method: 'POST', body: JSON.stringify({ ids }) }),
+  batchCancelTasks: (ids: string[]) => request<{ deleted: number }>('/api/tasks/batch-cancel', { method: 'POST', body: JSON.stringify({ ids }) }),
+  listLogs: (params?: { level?: string; account?: string }) => {
+    const search = new URLSearchParams();
+    if (params?.level) search.set('level', params.level);
+    if (params?.account) search.set('account', params.account);
+    const suffix = search.toString() ? `?${search.toString()}` : '';
+    return request<LogEntry[]>(`/api/logs${suffix}`);
+  },
+  clearLogs: () => request<void>('/api/logs', { method: 'DELETE' }),
+  getSettings: () => request<PoolSettings>('/api/settings'),
+  updateSettings: (payload: PoolSettings) => request<PoolSettings>('/api/settings', { method: 'PUT', body: JSON.stringify(payload) }),
+  rotateNow: () => request<Account>('/api/actions/rotate', { method: 'POST' }),
+  pauseAll: () => request<void>('/api/actions/pause-all', { method: 'POST' }),
+  healthCheck: () => request<{ ok: boolean; totalAccounts: number }>('/api/actions/health-check', { method: 'POST' }),
+  refreshCodexUsage: (id: string) => request<{
+    ok: boolean;
+    error?: string;
+    fetched_at?: string;
+    plan_type?: string | null;
+    primary?: { used_percent: number; window_minutes: number; resets_at: string | null } | null;
+    secondary?: { used_percent: number; window_minutes: number; resets_at: string | null } | null;
+  }>(`/api/accounts/${id}/refresh-codex-usage`, { method: 'POST' }),
+  getCodexUsage: () => request<{
+    found: boolean;
+    reason?: string;
+    recorded_at?: string;
+    primary?: { used_percent: number; window_minutes: number; resets_at: string | null } | null;
+    secondary?: { used_percent: number; window_minutes: number; resets_at: string | null } | null;
+    token_usage?: { input_tokens: number; output_tokens: number; total_tokens: number } | null;
+  }>('/api/codex-usage'),
+};
