@@ -116,3 +116,19 @@ Switch events are logged in the Dashboard activity feed.
 ## License
 
 MIT
+
+
+
+## Screenshots
+
+部署界面预览：
+
+![Deploy 1](assets/deploy-1.jpg)
+![Deploy 2](assets/deploy-2.jpg)
+![Deploy 3](assets/deploy-3.jpg)
+
+## 更新动态
+
+我会持续更新，感兴趣可以关注我的抖音：
+
+![Douyin](assets/douyin.jpg)
