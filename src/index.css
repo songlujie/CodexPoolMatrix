@@ -57,6 +57,56 @@
   }
 }
 
+/* ─── Light theme overrides (html.light) ─── */
+html.light {
+  --background: 0 0% 98%;
+  --foreground: 222 47% 11%;
+
+  --card: 0 0% 100%;
+  --card-foreground: 222 47% 11%;
+
+  --popover: 0 0% 100%;
+  --popover-foreground: 222 47% 11%;
+
+  --primary: 142 71% 38%;
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 220 14% 94%;
+  --secondary-foreground: 222 47% 11%;
+
+  --muted: 220 14% 92%;
+  --muted-foreground: 215 16% 44%;
+
+  --accent: 220 14% 94%;
+  --accent-foreground: 222 47% 11%;
+
+  --destructive: 0 84% 58%;
+  --destructive-foreground: 0 0% 100%;
+
+  --warning: 38 92% 46%;
+  --warning-foreground: 0 0% 100%;
+
+  --info: 217 91% 58%;
+  --info-foreground: 0 0% 100%;
+
+  --border: 220 13% 88%;
+  --input: 220 13% 91%;
+  --ring: 142 71% 38%;
+
+  --sidebar-background: 220 14% 96%;
+  --sidebar-foreground: 215 16% 44%;
+  --sidebar-primary: 142 71% 38%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 220 14% 91%;
+  --sidebar-accent-foreground: 222 47% 11%;
+  --sidebar-border: 220 13% 88%;
+  --sidebar-ring: 142 71% 38%;
+
+  --card-shadow: 0 0 0 1px rgba(0,0,0,0.06), 0 2px 4px rgba(0,0,0,0.05), 0 4px 12px rgba(0,0,0,0.08);
+  --card-shadow-hover: 0 8px 30px rgba(0,0,0,0.12);
+  --active-glow: 0 0 15px 2px rgba(34, 197, 94, 0.12);
+}
+
 @layer base {
   * {
     @apply border-border;

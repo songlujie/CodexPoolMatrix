@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Header } from '@/components/Header';
 import { LeftSidebar } from '@/components/LeftSidebar';
+import { DouyinPromo } from '@/components/DouyinPromo';
 import { Task, TaskStatus, Priority, Account, LogEntry, PoolSettings } from '@/types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -15,6 +16,7 @@ import { Plus, RotateCw, XCircle } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
+import { useI18n } from '@/lib/i18n';
 
 const statusBadge: Record<TaskStatus, { label: string; className: string }> = {
   queued: { label: 'Queued', className: 'bg-muted/30 text-muted-foreground border-muted/50' },
@@ -32,6 +34,7 @@ const Tasks = () => {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [dialogOpen, setDialogOpen] = useState(false);
   const [newTask, setNewTask] = useState({ description: '', priority: 'medium' as Priority, account: 'auto' });
+  const { t, dateLocale } = useI18n();
 
   const loadPage = async () => {
     const [nextTasks, nextAccounts, nextLogs, nextSettings] = await Promise.all([
@@ -95,46 +98,47 @@ const Tasks = () => {
   };
 
   if (!settings) {
-    return <div className="h-screen grid place-items-center text-sm text-muted-foreground">Loading tasks...</div>;
+    return <div className="h-screen grid place-items-center text-sm text-muted-foreground">{t('loading.tasks')}</div>;
   }
 
   return (
     <div className="h-screen flex flex-col">
+      <DouyinPromo />
       <Header activeAccount={currentAccount?.account_id || 'None'} mode={settings.mode} onModeChange={(mode) => setSettings((prev) => prev ? { ...prev, mode } : prev)} />
       <div className="flex-1 flex min-h-0">
         <LeftSidebar currentAccount={currentAccount} accounts={accounts} recentLogs={logs} />
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
           <div className="flex items-center justify-between p-4 border-b border-border/50">
-            <h2 className="text-sm font-semibold text-foreground">Task Queue</h2>
+            <h2 className="text-sm font-semibold text-foreground">{t('tasks.title')}</h2>
             <div className="flex gap-2">
               {selected.size > 0 && (
                 <>
                   <Button variant="outline" size="sm" className="h-7 text-xs border-destructive/30 text-destructive" onClick={batchCancel}>
-                    <XCircle className="h-3 w-3 mr-1" />Cancel ({selected.size})
+                    <XCircle className="h-3 w-3 mr-1" />{t('tasks.cancel')} ({selected.size})
                   </Button>
                   <Button variant="outline" size="sm" className="h-7 text-xs border-warning/30 text-warning" onClick={batchRetry}>
-                    <RotateCw className="h-3 w-3 mr-1" />Retry ({selected.size})
+                    <RotateCw className="h-3 w-3 mr-1" />{t('tasks.retry')} ({selected.size})
                   </Button>
                 </>
               )}
               <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
                 <DialogTrigger asChild>
                   <Button size="sm" className="h-7 text-xs bg-primary text-primary-foreground">
-                    <Plus className="h-3 w-3 mr-1" />Add Task
+                    <Plus className="h-3 w-3 mr-1" />{t('tasks.addTask')}
                   </Button>
                 </DialogTrigger>
                 <DialogContent className="bg-card border-border">
                   <DialogHeader>
-                    <DialogTitle className="text-sm">Add Task</DialogTitle>
+                    <DialogTitle className="text-sm">{t('tasks.addTask')}</DialogTitle>
                   </DialogHeader>
                   <div className="space-y-3">
                     <div>
-                      <Label className="text-xs text-muted-foreground">Description</Label>
+                      <Label className="text-xs text-muted-foreground">{t('tasks.description')}</Label>
                       <Textarea value={newTask.description} onChange={(e) => setNewTask((prev) => ({ ...prev, description: e.target.value }))} className="text-xs bg-input border-border/50 mt-1" rows={3} />
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <Label className="text-xs text-muted-foreground">Priority</Label>
+                        <Label className="text-xs text-muted-foreground">{t('tasks.priority')}</Label>
                         <Select value={newTask.priority} onValueChange={(value) => setNewTask((prev) => ({ ...prev, priority: value as Priority }))}>
                           <SelectTrigger className="h-8 text-xs bg-input border-border/50 mt-1"><SelectValue /></SelectTrigger>
                           <SelectContent>
@@ -145,17 +149,17 @@ const Tasks = () => {
                         </Select>
                       </div>
                       <div>
-                        <Label className="text-xs text-muted-foreground">Account</Label>
+                        <Label className="text-xs text-muted-foreground">{t('tasks.account')}</Label>
                         <Select value={newTask.account} onValueChange={(value) => setNewTask((prev) => ({ ...prev, account: value }))}>
                           <SelectTrigger className="h-8 text-xs bg-input border-border/50 mt-1"><SelectValue /></SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="auto">Auto-assign</SelectItem>
+                            <SelectItem value="auto">{t('tasks.autoAssign')}</SelectItem>
                             {accounts.map((account) => <SelectItem key={account.id} value={account.id}>{account.account_id}</SelectItem>)}
                           </SelectContent>
                         </Select>
                       </div>
                     </div>
-                    <Button className="w-full h-8 text-xs bg-primary text-primary-foreground" onClick={addTask}>Create Task</Button>
+                    <Button className="w-full h-8 text-xs bg-primary text-primary-foreground" onClick={addTask}>{t('tasks.create')}</Button>
                   </div>
                 </DialogContent>
               </Dialog>
@@ -168,12 +172,12 @@ const Tasks = () => {
                 <TableRow className="border-border/50 hover:bg-transparent">
                   <TableHead className="w-8" />
                   <TableHead className="text-xs text-muted-foreground">Task ID</TableHead>
-                  <TableHead className="text-xs text-muted-foreground">Description</TableHead>
-                  <TableHead className="text-xs text-muted-foreground">Account</TableHead>
-                  <TableHead className="text-xs text-muted-foreground">Status</TableHead>
-                  <TableHead className="text-xs text-muted-foreground">Priority</TableHead>
-                  <TableHead className="text-xs text-muted-foreground">Created</TableHead>
-                  <TableHead className="text-xs text-muted-foreground">Result</TableHead>
+                  <TableHead className="text-xs text-muted-foreground">{t('tasks.description')}</TableHead>
+                  <TableHead className="text-xs text-muted-foreground">{t('tasks.account')}</TableHead>
+                  <TableHead className="text-xs text-muted-foreground">{t('tasks.status')}</TableHead>
+                  <TableHead className="text-xs text-muted-foreground">{t('tasks.priority')}</TableHead>
+                  <TableHead className="text-xs text-muted-foreground">{t('tasks.created')}</TableHead>
+                  <TableHead className="text-xs text-muted-foreground">{t('tasks.result')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -193,7 +197,7 @@ const Tasks = () => {
                       <TableCell className="capitalize text-muted-foreground">{task.priority}</TableCell>
                       <TableCell>
                         <Tooltip>
-                          <TooltipTrigger className="text-muted-foreground">{formatDistanceToNow(new Date(task.created_at), { addSuffix: true })}</TooltipTrigger>
+                          <TooltipTrigger className="text-muted-foreground">{formatDistanceToNow(new Date(task.created_at), { addSuffix: true, locale: dateLocale })}</TooltipTrigger>
                           <TooltipContent className="text-xs">{new Date(task.created_at).toLocaleString()}</TooltipContent>
                         </Tooltip>
                       </TableCell>

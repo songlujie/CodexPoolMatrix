@@ -27,3 +27,6 @@ dist-ssr
 .env
 .env.local
 .env.*.local
+
+# Auth files (OAuth tokens, sensitive - do not commit)
+accounts/

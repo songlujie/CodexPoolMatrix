@@ -25,7 +25,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   listAccounts: () => request<Account[]>('/api/accounts'),
-  createAccount: (payload: Pick<Account, 'account_id' | 'email' | 'auth_type' | 'auth_file_path'>) => request<Account>('/api/accounts', { method: 'POST', body: JSON.stringify(payload) }),
+  createAccount: (payload: Pick<Account, 'account_id' | 'email' | 'auth_type' | 'auth_file_path'> & { platform?: string }) => request<Account>('/api/accounts', { method: 'POST', body: JSON.stringify(payload) }),
   updateAccountAction: (id: string, action: 'setActive' | 'pause' | 'reset') => request<Account>(`/api/accounts/${id}`, { method: 'PATCH', body: JSON.stringify({ action }) }),
   deleteAccount: (id: string) => request<void>(`/api/accounts/${id}`, { method: 'DELETE' }),
   clearAllAccounts: () => request<void>('/api/accounts', { method: 'DELETE' }),
@@ -35,6 +35,10 @@ export const api = {
     rate_limited?: boolean;
     retry_after?: string | null;
     error?: string;
+    fetched_at?: string;
+    plan_type?: string | null;
+    primary?: { used_percent: number; window_minutes: number; resets_at: string | null } | null;
+    secondary?: { used_percent: number; window_minutes: number; resets_at: string | null } | null;
     rate_limit?: {
       limit_requests?: string | null;
       remaining_requests?: string | null;
@@ -61,10 +65,11 @@ export const api = {
   createTask: (payload: { description: string; priority: Task['priority']; account: string }) => request<Task>('/api/tasks', { method: 'POST', body: JSON.stringify(payload) }),
   batchRetryTasks: (ids: string[]) => request<{ updated: number }>('/api/tasks/batch-retry', { method: 'POST', body: JSON.stringify({ ids }) }),
   batchCancelTasks: (ids: string[]) => request<{ deleted: number }>('/api/tasks/batch-cancel', { method: 'POST', body: JSON.stringify({ ids }) }),
-  listLogs: (params?: { level?: string; account?: string }) => {
+  listLogs: (params?: { level?: string; account?: string; limit?: number }) => {
     const search = new URLSearchParams();
     if (params?.level) search.set('level', params.level);
     if (params?.account) search.set('account', params.account);
+    if (params?.limit) search.set('limit', String(params.limit));
     const suffix = search.toString() ? `?${search.toString()}` : '';
     return request<LogEntry[]>(`/api/logs${suffix}`);
   },
@@ -74,6 +79,7 @@ export const api = {
   rotateNow: () => request<Account>('/api/actions/rotate', { method: 'POST' }),
   pauseAll: () => request<void>('/api/actions/pause-all', { method: 'POST' }),
   healthCheck: () => request<{ ok: boolean; totalAccounts: number }>('/api/actions/health-check', { method: 'POST' }),
+  restartOpenClaw: () => request<{ ok: boolean; method?: string; reason?: string; note?: string }>('/api/actions/restart-openclaw', { method: 'POST' }),
   refreshCodexUsage: (id: string) => request<{
     ok: boolean;
     error?: string;
@@ -82,6 +88,34 @@ export const api = {
     primary?: { used_percent: number; window_minutes: number; resets_at: string | null } | null;
     secondary?: { used_percent: number; window_minutes: number; resets_at: string | null } | null;
   }>(`/api/accounts/${id}/refresh-codex-usage`, { method: 'POST' }),
+  refreshToken: (id: string) => request<{ ok: boolean; newExpiresAt?: string; reason?: string }>(`/api/accounts/${id}/refresh-token`, { method: 'POST' }),
+  scanDir: (dir?: string) => request<{
+    files: Array<{
+      file: string;
+      full_path: string;
+      til_path: string;
+      email?: string;
+      auth_type?: string;
+      suggested_name?: string;
+      already_added?: boolean;
+      error?: string;
+    }>;
+    dir: string;
+    error?: string;
+  }>(`/api/accounts/scan-dir${dir ? `?dir=${encodeURIComponent(dir)}` : ''}`),
+  refreshAllTokens: () => request<{ ok: boolean; total: number; success: number; results: Array<{ id: string; account_id: string; ok: boolean; reason?: string; newExpiresAt?: string }> }>('/api/actions/refresh-all-tokens', { method: 'POST' }),
+  startCodexLogin: () => request<{ ok: boolean }>('/api/auth/codex-login', { method: 'POST' }),
+  getCodexLoginStatus: () => request<{
+    status: 'idle' | 'running' | 'success' | 'error';
+    message: string;
+    output: string;
+    newFile: string | null;
+    error: string | null;
+  }>('/api/auth/codex-login/status'),
+  cancelCodexLogin: () => request<{ ok: boolean }>('/api/auth/codex-login', { method: 'DELETE' }),
+  listPlatforms: () => request<string[]>('/api/platforms'),
+  addPlatform: (name: string) => request<string[]>('/api/platforms', { method: 'POST', body: JSON.stringify({ name }) }),
+  deletePlatform: (name: string) => request<string[]>(`/api/platforms/${encodeURIComponent(name)}`, { method: 'DELETE' }),
   getCodexUsage: () => request<{
     found: boolean;
     reason?: string;

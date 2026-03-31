@@ -4,7 +4,8 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { PoolSettings } from '@/types';
-import { RotateCw, Pause } from 'lucide-react';
+import { RotateCw, Zap, KeyRound, RefreshCcw } from 'lucide-react';
+import { useI18n } from '@/lib/i18n';
 
 interface RightSidebarProps {
   settings: PoolSettings;
@@ -12,9 +13,14 @@ interface RightSidebarProps {
   onRotateNow: () => void;
   onPauseAll: () => void;
   onHealthCheck: () => void;
+  onRestartOpenClaw?: () => void;
+  onRefreshAllTokens?: () => void;
+  onCheckAllUsage?: () => void;
 }
 
-export function RightSidebar({ settings, onSettingsChange, onRotateNow, onPauseAll }: RightSidebarProps) {
+export function RightSidebar({ settings, onSettingsChange, onRotateNow, onPauseAll, onHealthCheck, onRestartOpenClaw, onRefreshAllTokens, onCheckAllUsage }: RightSidebarProps) {
+  const { t } = useI18n();
+
   const update = (partial: Partial<PoolSettings>) => {
     onSettingsChange({ ...settings, ...partial });
   };
@@ -24,48 +30,77 @@ export function RightSidebar({ settings, onSettingsChange, onRotateNow, onPauseA
 
       {/* 快捷操作 */}
       <div className="p-4 border-b border-border/50 space-y-2">
-        <h3 className="text-xs font-semibold text-foreground uppercase tracking-wider mb-3">快捷操作</h3>
+        <h3 className="text-xs font-semibold text-foreground uppercase tracking-wider mb-3">{t('right.quickActions')}</h3>
         <Button onClick={onRotateNow} className="w-full h-8 text-xs bg-primary hover:bg-primary/90 text-primary-foreground">
           <RotateCw className="h-3.5 w-3.5 mr-1.5" />
-          立即切换下一个账号
+          {t('right.rotateNext')}
         </Button>
-        <Button onClick={onPauseAll} variant="outline" className="w-full h-8 text-xs border-warning/30 text-warning hover:bg-warning/10">
-          <Pause className="h-3.5 w-3.5 mr-1.5" />
-          暂停所有账号
-        </Button>
+
+        {onCheckAllUsage && (
+          <Button onClick={onCheckAllUsage} variant="outline" className="w-full h-8 text-xs border-primary/30 text-primary hover:bg-primary/10">
+            <Zap className="h-3.5 w-3.5 mr-1.5" />
+            检测所有账号用量
+          </Button>
+        )}
       </div>
 
       {/* 轮换策略 */}
       <div className="p-4 border-b border-border/50 space-y-4">
-        <h3 className="text-xs font-semibold text-foreground uppercase tracking-wider">轮换设置</h3>
+        <h3 className="text-xs font-semibold text-foreground uppercase tracking-wider">{t('right.rotationSettings')}</h3>
 
         <div className="space-y-1.5">
-          <Label className="text-xs text-muted-foreground">切换策略</Label>
+          <Label className="text-xs text-muted-foreground">{t('right.strategy')}</Label>
           <Select value={settings.strategy} onValueChange={(v) => update({ strategy: v as PoolSettings['strategy'] })}>
             <SelectTrigger className="h-8 text-xs bg-input border-border/50">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="round_robin">Round Robin（轮流）</SelectItem>
-              <SelectItem value="least_used">Least Used（最少使用）</SelectItem>
-              <SelectItem value="random">Random（随机）</SelectItem>
-              <SelectItem value="priority_based">Priority Based（优先级）</SelectItem>
+              <SelectItem value="round_robin">{t('right.strategy.round_robin')}</SelectItem>
+              <SelectItem value="least_used">{t('right.strategy.least_used')}</SelectItem>
+              <SelectItem value="random">{t('right.strategy.random')}</SelectItem>
+              <SelectItem value="priority_based">{t('right.strategy.priority_based')}</SelectItem>
             </SelectContent>
           </Select>
         </div>
 
         <div className="flex items-center justify-between">
-          <Label className="text-xs text-muted-foreground">自动轮换</Label>
+          <Label className="text-xs text-muted-foreground">{t('right.autoRotation')}</Label>
           <Switch checked={settings.auto_rotation} onCheckedChange={(v) => update({ auto_rotation: v })} />
         </div>
+
+        <div className="flex items-center justify-between">
+          <Label className="text-xs text-muted-foreground">{t('right.autoTokenRefresh')}</Label>
+          <Switch checked={settings.auto_token_refresh} onCheckedChange={(v) => update({ auto_token_refresh: v })} />
+        </div>
+
+        {settings.auto_token_refresh && (
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">{t('right.refreshInterval')}</Label>
+            <Select
+              value={String(settings.token_refresh_interval_hours)}
+              onValueChange={(v) => update({ token_refresh_interval_hours: Number(v) })}
+            >
+              <SelectTrigger className="h-8 text-xs bg-input border-border/50">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="24">24h (1 天)</SelectItem>
+                <SelectItem value="48">48h (2 天)</SelectItem>
+                <SelectItem value="72">72h (3 天)</SelectItem>
+                <SelectItem value="120">120h (5 天)</SelectItem>
+                <SelectItem value="168">168h (7 天)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        )}
       </div>
 
       {/* Codex 路径 */}
       <div className="p-4 border-b border-border/50 space-y-3">
-        <h3 className="text-xs font-semibold text-foreground uppercase tracking-wider">Codex 配置</h3>
+        <h3 className="text-xs font-semibold text-foreground uppercase tracking-wider">{t('right.codexConfig')}</h3>
 
         <div className="space-y-1">
-          <Label className="text-[11px] text-muted-foreground">Codex 可执行文件路径</Label>
+          <Label className="text-[11px] text-muted-foreground">{t('right.codexPath')}</Label>
           <Input
             value={settings.codex_path}
             onChange={(e) => update({ codex_path: e.target.value })}
@@ -77,7 +112,7 @@ export function RightSidebar({ settings, onSettingsChange, onRotateNow, onPauseA
 
       {/* Openclaw 集成 */}
       <div className="p-4 space-y-3">
-        <h3 className="text-xs font-semibold text-foreground uppercase tracking-wider">Openclaw 集成</h3>
+        <h3 className="text-xs font-semibold text-foreground uppercase tracking-wider">{t('right.openclawIntegration')}</h3>
 
         <div className="flex items-center gap-2 text-xs">
           <span className="h-2 w-2 rounded-full bg-primary" />
@@ -85,7 +120,7 @@ export function RightSidebar({ settings, onSettingsChange, onRotateNow, onPauseA
         </div>
 
         <div className="space-y-1">
-          <Label className="text-[11px] text-muted-foreground">Endpoint</Label>
+          <Label className="text-[11px] text-muted-foreground">{t('right.endpoint')}</Label>
           <Input
             value={settings.openclaw_endpoint}
             onChange={(e) => update({ openclaw_endpoint: e.target.value })}
@@ -94,7 +129,7 @@ export function RightSidebar({ settings, onSettingsChange, onRotateNow, onPauseA
         </div>
 
         <div className="space-y-1">
-          <Label className="text-[11px] text-muted-foreground">API Key</Label>
+          <Label className="text-[11px] text-muted-foreground">{t('right.apiKey')}</Label>
           <Input
             type="password"
             value={settings.openclaw_api_key}
@@ -105,9 +140,15 @@ export function RightSidebar({ settings, onSettingsChange, onRotateNow, onPauseA
         </div>
 
         <div className="flex items-center justify-between">
-          <Label className="text-xs text-muted-foreground">自动分发任务</Label>
+          <Label className="text-xs text-muted-foreground">{t('right.autoDispatch')}</Label>
           <Switch checked={settings.auto_dispatch} onCheckedChange={(v) => update({ auto_dispatch: v })} />
         </div>
+        {onRestartOpenClaw && (
+          <Button onClick={onRestartOpenClaw} variant="outline" className="w-full h-8 text-xs border-info/30 text-info hover:bg-info/10">
+            <RefreshCcw className="h-3.5 w-3.5 mr-1.5" />
+            {t('right.reloadOpenClaw')}
+          </Button>
+        )}
       </div>
     </aside>
   );

@@ -1,4 +1,13 @@
 export type AccountStatus = 'active' | 'idle' | 'error' | 'rate_limited' | 'cooldown';
+
+export interface LiveUsageData {
+  ok: boolean;
+  error?: string;
+  fetched_at?: string;
+  plan_type?: string | null;
+  primary?: { used_percent: number; window_minutes: number; resets_at: string | null } | null;
+  secondary?: { used_percent: number; window_minutes: number; resets_at: string | null } | null;
+}
 export type AccountType = 'team' | 'plus' | 'free';
 export type TaskStatus = 'queued' | 'running' | 'completed' | 'failed' | 'retrying';
 export type LogLevel = 'info' | 'warn' | 'error';
@@ -11,6 +20,7 @@ export interface Account {
   email: string;
   auth_type: AccountType;
   auth_file_path: string;
+  platform: string;
   status: AccountStatus;
   is_current: boolean;
   last_login_at: string;
@@ -68,4 +78,6 @@ export interface PoolSettings {
   trae_path: string;
   mode: 'codex' | 'trae';
   auto_launch: boolean;
+  auto_token_refresh: boolean;
+  token_refresh_interval_hours: number;
 }

@@ -105,4 +105,6 @@ export const defaultSettings = {
   trae_path: '/usr/local/bin/trae',
   mode: 'codex',
   auto_launch: false,
+  auto_token_refresh: true,
+  token_refresh_interval_hours: 72,
 };

@@ -45,6 +45,7 @@ async function createTables() {
       tokens_used_percent INT NOT NULL DEFAULT 0,
       last_request_at DATETIME NOT NULL,
       uptime_percent DECIMAL(5,2) NOT NULL DEFAULT 0,
+      platform VARCHAR(50) NOT NULL DEFAULT 'gpt',
       created_at DATETIME NOT NULL,
       updated_at DATETIME NOT NULL
     )
@@ -98,9 +99,27 @@ async function createTables() {
       trae_path VARCHAR(255) NOT NULL,
       mode ENUM('codex', 'trae') NOT NULL,
       auto_launch BOOLEAN NOT NULL DEFAULT FALSE,
+      auto_token_refresh BOOLEAN NOT NULL DEFAULT TRUE,
+      token_refresh_interval_hours INT NOT NULL DEFAULT 72,
       updated_at DATETIME NOT NULL
     )
   `);
+}
+
+async function createIndexes() {
+  const indexes = [
+    'CREATE INDEX IF NOT EXISTS idx_accounts_is_current ON accounts (is_current)',
+    'CREATE INDEX IF NOT EXISTS idx_accounts_status ON accounts (status)',
+    'CREATE INDEX IF NOT EXISTS idx_logs_created_at ON logs (created_at)',
+    'CREATE INDEX IF NOT EXISTS idx_logs_level ON logs (level)',
+    'CREATE INDEX IF NOT EXISTS idx_logs_account_id ON logs (account_id)',
+    'CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON tasks (created_at)',
+    'CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks (status)',
+    'CREATE INDEX IF NOT EXISTS idx_tasks_assigned_account_id ON tasks (assigned_account_id)',
+  ];
+  for (const sql of indexes) {
+    await pool.query(sql);
+  }
 }
 
 async function seedAccounts() {
@@ -184,8 +203,8 @@ async function seedSettings() {
       id, strategy, auto_rotation, rest_after_tasks, cooldown_minutes, rate_limit_buffer,
       max_concurrent_tasks, global_rate_limit, auto_retry, max_retries, task_timeout_minutes,
       auto_dispatch, openclaw_endpoint, openclaw_api_key, codex_path, trae_path,
-      mode, auto_launch, updated_at
-    ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+      mode, auto_launch, auto_token_refresh, token_refresh_interval_hours, updated_at
+    ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
     [
       defaultSettings.strategy,
       defaultSettings.auto_rotation,
@@ -204,14 +223,34 @@ async function seedSettings() {
       defaultSettings.trae_path,
       defaultSettings.mode,
       defaultSettings.auto_launch,
+      defaultSettings.auto_token_refresh,
+      defaultSettings.token_refresh_interval_hours,
     ],
   );
+}
+
+async function migrateSettings() {
+  // 为已有数据库添加新字段（不影响新安装）
+  const migrations = [
+    "ALTER TABLE settings ADD COLUMN auto_token_refresh BOOLEAN NOT NULL DEFAULT TRUE",
+    "ALTER TABLE settings ADD COLUMN token_refresh_interval_hours INT NOT NULL DEFAULT 72",
+    "ALTER TABLE accounts ADD COLUMN platform VARCHAR(50) NOT NULL DEFAULT 'gpt'",
+  ];
+  for (const sql of migrations) {
+    try { await pool.query(sql); } catch { /* column already exists, ignore */ }
+  }
 }
 
 export async function initDatabase() {
   await ensureDatabase();
   await createTables();
-  await seedAccounts();
+  await createIndexes();
+  await migrateSettings();
+
+  // 仅在非生产环境插入示例数据
+  if (process.env.NODE_ENV !== 'production') {
+    await seedAccounts();
+  }
   await seedSettings();
 }
 
