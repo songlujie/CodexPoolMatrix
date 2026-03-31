@@ -8,7 +8,7 @@ const dateFnsLocales = { en: enUS, zh: zhCN } as const;
 const translations = {
   // ─── Header ───
   'app.title': { en: 'Codex Pool Manager', zh: 'Codex 账号池管理器' },
-  'app.version': { en: 'v2.0', zh: 'v2.0' },
+  'app.version': { en: 'v2.1', zh: 'v2.1' },
 
   // ─── 404 ───
   'notFound.title': { en: '404', zh: '404' },

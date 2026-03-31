@@ -1,56 +1,66 @@
-# Codex Account Manager
+# 🦞 小龙虾 — Codex 账号池管理器
 
-A dashboard for managing multiple OpenAI Codex accounts (ChatGPT OAuth), with real-time usage monitoring and automatic account rotation.
-> 原则上也可用于 Gemini / Claude 等账号管理，但我主要用 Codex，所以示例与实现以 Codex 为主。
+[![Version](https://img.shields.io/badge/version-2.1.0-green?style=flat-square)](https://github.com/heyuqiu2023/CodexPool/releases)
+[![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
+[![Stars](https://img.shields.io/github/stars/heyuqiu2023/CodexPool?style=flat-square)](https://github.com/heyuqiu2023/CodexPool/stargazers)
+[![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen?style=flat-square)](https://nodejs.org)
 
+多账号 Codex 管理仪表板，支持 GPT / Gemini / Claude 等多平台账号，实时监控用量、自动轮换，一键登录新账号。
 
-![Dashboard Preview](public/preview.png)
+> Originally designed for OpenAI Codex, but works with any platform using ChatGPT OAuth tokens.
 
-## Features
+![Dashboard](assets/screenshot-dashboard.png)
 
-- **Multi-account management** — Add and switch between multiple OpenAI Codex accounts using ChatGPT OAuth tokens
-- **Real-time usage monitoring** — Shows 5-hour window and weekly quota usage by calling the Codex API directly
-- **Auto-rotation** — Automatically switches to the next account when the 5-hour usage exceeds 90%
-- **Smart polling** — Adjusts check frequency based on usage level (30min → 10min → 5min as usage increases)
-- **Auth file switching** — Copies the selected account's `auth.json` to `~/.codex/auth.json` on activation
-- **Token info** — Displays email, plan type, and token expiry decoded from JWT
-- **Activity logs** — Real-time log feed with rotation events and usage checks
+---
 
-## Tech Stack
+## ✨ Features
+
+- **平台分类** — 支持 GPT、Gemini、Claude 等多平台账号，可自定义添加新平台
+- **一键登录** — 在界面内直接完成 `codex login` OAuth 授权，auth 文件自动保存
+- **批量用量检测** — 一键检测所有账号的 5h 窗口用量，结果实时展示在各账号卡片
+- **自动轮换** — 用量超过阈值时自动切换到下一个可用账号
+- **亮暗主题** — 支持深色 / 浅色模式随时切换
+- **紧凑列表视图** — 网格视图和紧凑列表视图自由切换
+- **实时日志** — 完整记录轮换事件、Token 刷新、用量检测
+
+## 📸 Screenshots
+
+| 仪表板 | 添加账号 | 日志 |
+|--------|---------|------|
+| ![Dashboard](assets/screenshot-dashboard.png) | ![Add Account](assets/screenshot-add.png) | ![Logs](assets/screenshot-logs.png) |
+
+---
+
+## 🛠 Tech Stack
 
 - **Frontend**: React + TypeScript + Vite + Tailwind CSS + shadcn/ui
 - **Backend**: Express.js + Node.js
 - **Database**: MySQL (via XAMPP)
 
-## Prerequisites
+---
 
-- Node.js 18+
-- MySQL (XAMPP recommended on macOS)
-- OpenAI Codex CLI installed (`npm install -g @openai/codex`)
-- ChatGPT Plus / Team / Pro account with Codex access
+## 🚀 Quick Start
 
-## Setup
-
-### 1. Clone the repo
+### 1. Clone
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/codex-account-manager.git
-cd codex-account-manager
+git clone https://github.com/heyuqiu2023/CodexPool.git
+cd CodexPool
 ```
 
-### 2. Install dependencies
+### 2. Install
 
 ```bash
 npm install
 ```
 
-### 3. Configure environment
+### 3. Configure
 
 ```bash
 cp .env.example .env
 ```
 
-Edit `.env` with your database credentials:
+Edit `.env`:
 
 ```env
 PORT=3001
@@ -64,71 +74,79 @@ DB_NAME=codex_pool_manager
 VITE_API_BASE_URL=http://localhost:3001
 ```
 
-### 4. Create the database
+### 4. Start MySQL
 
-Start MySQL, then create a database named `codex_pool_manager`. The server will auto-create all tables on first run.
+Start MySQL via XAMPP, create a database named `codex_pool_manager`. Tables are created automatically on first run.
 
-### 5. Start the app
+### 5. Run
 
 ```bash
-# Start backend
+# Terminal 1 — backend
 node server/index.js
 
-# Start frontend (in another terminal)
+# Terminal 2 — frontend
 npm run dev
 ```
 
 Open [http://localhost:8080](http://localhost:8080)
 
-## How to add accounts
+---
 
-1. Log into Codex CLI with your ChatGPT account:
-   ```bash
-   codex login
-   ```
-2. Copy the generated auth file:
-   ```bash
-   cp ~/.codex/auth.json ~/Desktop/openai-accounts/acc1.json
-   ```
-3. In the Dashboard, click **+ Add Account** and enter the path to your auth file (e.g. `~/Desktop/openai-accounts/acc1.json`)
+## ➕ Adding Accounts
 
-Repeat for each account.
+### 方式一：一键登录（推荐）
 
-## Auto-rotation
+1. 点击右上角 **+ 添加账号**
+2. 点击 **一键登录新账号**
+3. 在弹出的终端中完成浏览器 OAuth 授权
+4. 授权成功后账号自动保存 ✅
 
-Enable **Auto-rotation** in the right sidebar. The system will:
+### 方式二：手动导入
 
-| 5h Usage | Check Interval |
-|---|---|
-| < 50% | Every 30 minutes |
-| 50–80% | Every 10 minutes |
-| > 80% | Every 5 minutes |
-| **> 90%** | **Switch immediately** |
+1. 在终端执行 `codex login`，完成授权
+2. 复制 auth 文件：`cp ~/.codex/auth.json ~/Desktop/openai-accounts/acc1.json`
+3. 点击 **+ 添加账号 → 扫描**，选择文件路径
 
-Switch events are logged in the Dashboard activity feed.
+---
 
-## Notes
+## 🔄 Auto-Rotation
 
-- Auth files contain OAuth tokens — keep them secure and do not commit them to version control
-- Each usage check consumes a small number of Codex tokens (rounds to ~0% of the 5h window)
-- The auto-rotation only activates when the **Auto-rotation** toggle is enabled
+| 5h 用量 | 检查间隔 |
+|--------|---------|
+| < 50%  | 每 30 分钟 |
+| 50–80% | 每 10 分钟 |
+| > 80%  | 每 5 分钟 |
+| **> 90%** | **立即切换** |
+
+---
+
+## ⚠️ Notes
+
+- Auth 文件包含 OAuth Token，请勿提交到版本控制
+- 用量检测调用零 Token 接口，不消耗 Codex 配额
+- 自动轮换仅在开启 **自动轮换** 开关时生效
+
+---
+
+## ❤️ 赞助
+
+如果这个项目对你有帮助，欢迎请我喝杯咖啡 ☕
+
+你的支持是我持续更新、带来更好作品的动力，感谢每一位愿意赞助的朋友！
+
+<img src="assets/wechat-donate.png" width="200" alt="微信收款码" />
+
+---
+
+## 📢 更新动态
+
+持续更新中，欢迎关注我的社交账号获取最新进展：
+
+[![抖音](https://img.shields.io/badge/抖音-87557938150-000000?style=for-the-badge&logo=tiktok&logoColor=white)](https://www.douyin.com/search/87557938150)
+[![小红书](https://img.shields.io/badge/小红书-秋雨河-FF2442?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZmlsbD0id2hpdGUiIGQ9Ik0xMiAyQzYuNDggMiAyIDYuNDggMiAxMnM0LjQ4IDEwIDEwIDEwIDEwLTQuNDggMTAtMTBTMTcuNTIgMiAxMiAyeiIvPjwvc3ZnPg==&logoColor=white)](https://www.xiaohongshu.com/search_result?keyword=9493195118)
+
+---
 
 ## License
 
 MIT
-
-
-
-## Screenshots
-
-部署界面预览：
-
-![Deploy 1](assets/deploy-1.jpg)
-![Deploy 2](assets/deploy-2.jpg)
-![Deploy 3](assets/deploy-3.jpg)
-
-## 更新动态
-
-我会持续更新，感兴趣可以关注我的抖音：
-
-![Douyin](assets/douyin.jpg)
