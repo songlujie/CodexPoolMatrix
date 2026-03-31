@@ -4,12 +4,14 @@
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/heyuqiu2023/CodexPool?style=flat-square)](https://github.com/heyuqiu2023/CodexPool/stargazers)
 [![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen?style=flat-square)](https://nodejs.org)
+[![抖音](https://img.shields.io/badge/抖音-87557938150-000000?style=flat-square&logo=tiktok&logoColor=white)](https://www.douyin.com/search/87557938150)
+[![小红书](https://img.shields.io/badge/小红书-秋雨河-FF2442?style=flat-square&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZmlsbD0id2hpdGUiIGQ9Ik0xMiAyQzYuNDggMiAyIDYuNDggMiAxMnM0LjQ4IDEwIDEwIDEwIDEwLTQuNDggMTAtMTBTMTcuNTIgMiAxMiAyeiIvPjwvc3ZnPg==&logoColor=white)](https://www.xiaohongshu.com/search_result?keyword=9493195118)
 
 多账号 Codex 管理仪表板，支持 GPT / Gemini / Claude 等多平台账号，实时监控用量、自动轮换，一键登录新账号。
 
 > Originally designed for OpenAI Codex, but works with any platform using ChatGPT OAuth tokens.
 
-![Dashboard](assets/screenshot-dashboard.png)
+![Dashboard](assets/deploy-1.jpg)
 
 ---
 
@@ -27,7 +29,7 @@
 
 | 仪表板 | 添加账号 | 日志 |
 |--------|---------|------|
-| ![Dashboard](assets/screenshot-dashboard.png) | ![Add Account](assets/screenshot-add.png) | ![Logs](assets/screenshot-logs.png) |
+| ![Dashboard](assets/deploy-1.jpg) | ![Add Account](assets/deploy-2.jpg) | ![Logs](assets/deploy-3.jpg) |
 
 ---
 
@@ -135,15 +137,6 @@ Open [http://localhost:8080](http://localhost:8080)
 你的支持是我持续更新、带来更好作品的动力，感谢每一位愿意赞助的朋友！
 
 <img src="assets/wechat-donate.png" width="200" alt="微信收款码" />
-
----
-
-## 📢 更新动态
-
-持续更新中，欢迎关注我的社交账号获取最新进展：
-
-[![抖音](https://img.shields.io/badge/抖音-87557938150-000000?style=for-the-badge&logo=tiktok&logoColor=white)](https://www.douyin.com/search/87557938150)
-[![小红书](https://img.shields.io/badge/小红书-秋雨河-FF2442?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZmlsbD0id2hpdGUiIGQ9Ik0xMiAyQzYuNDggMiAyIDYuNDggMiAxMnM0LjQ4IDEwIDEwIDEwIDEwLTQuNDggMTAtMTBTMTcuNTIgMiAxMiAyeiIvPjwvc3ZnPg==&logoColor=white)](https://www.xiaohongshu.com/search_result?keyword=9493195118)
 
 ---
 
