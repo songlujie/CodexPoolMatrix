@@ -11,8 +11,6 @@
 
 > Originally designed for OpenAI Codex, but works with any platform using ChatGPT OAuth tokens.
 
-![Dashboard](assets/deploy-1.jpg)
-
 ---
 
 ## ✨ Features
@@ -29,7 +27,7 @@
 
 | 仪表板 | 添加账号 | 日志 |
 |--------|---------|------|
-| ![Dashboard](assets/deploy-1.jpg) | ![Add Account](assets/deploy-2.jpg) | ![Logs](assets/deploy-3.jpg) |
+| ![Dashboard](assets/screenshot-dashboard.png) | ![Add Account](assets/screenshot-add.png) | ![Logs](assets/screenshot-logs.png) |
 
 ---
 
