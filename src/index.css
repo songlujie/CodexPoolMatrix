@@ -1,0 +1,252 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 256 34% 7%;
+    --foreground: 252 28% 94%;
+
+    --card: 255 28% 12%;
+    --card-foreground: 252 28% 94%;
+
+    --popover: 255 28% 12%;
+    --popover-foreground: 252 28% 94%;
+
+    --primary: 268 82% 66%;
+    --primary-foreground: 255 36% 9%;
+
+    --secondary: 255 19% 18%;
+    --secondary-foreground: 252 28% 94%;
+
+    --muted: 255 18% 26%;
+    --muted-foreground: 248 16% 72%;
+
+    --accent: 258 24% 18%;
+    --accent-foreground: 252 28% 94%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 210 40% 98%;
+
+    --warning: 38 92% 50%;
+    --warning-foreground: 255 36% 9%;
+
+    --info: 246 86% 72%;
+    --info-foreground: 210 40% 98%;
+
+    --border: 255 18% 24%;
+    --input: 255 19% 18%;
+    --ring: 268 82% 66%;
+
+    --radius: 0.75rem;
+
+    --sidebar-background: 256 38% 6%;
+    --sidebar-foreground: 248 16% 72%;
+    --sidebar-primary: 268 82% 66%;
+    --sidebar-primary-foreground: 255 36% 9%;
+    --sidebar-accent: 257 22% 15%;
+    --sidebar-accent-foreground: 252 28% 94%;
+    --sidebar-border: 255 18% 18%;
+    --sidebar-ring: 268 82% 66%;
+
+    --card-shadow: 0 0 0 1px rgba(255,255,255,0.05), 0 2px 4px rgba(0,0,0,0.2), 0 4px 12px rgba(0,0,0,0.4);
+    --card-shadow-hover: 0 8px 30px rgb(0,0,0,0.5);
+    --active-glow: 0 0 18px 3px rgba(168, 85, 247, 0.22);
+  }
+}
+
+html[data-color-theme="blue"] {
+  --primary: 221 83% 62%;
+  --primary-foreground: 220 40% 8%;
+  --ring: 221 83% 62%;
+  --info: 214 90% 68%;
+  --sidebar-primary: 221 83% 62%;
+  --sidebar-primary-foreground: 220 40% 8%;
+  --sidebar-ring: 221 83% 62%;
+  --active-glow: 0 0 18px 3px rgba(59, 130, 246, 0.22);
+}
+
+html[data-color-theme="emerald"] {
+  --primary: 160 84% 42%;
+  --primary-foreground: 158 50% 8%;
+  --ring: 160 84% 42%;
+  --info: 168 76% 58%;
+  --sidebar-primary: 160 84% 42%;
+  --sidebar-primary-foreground: 158 50% 8%;
+  --sidebar-ring: 160 84% 42%;
+  --active-glow: 0 0 18px 3px rgba(16, 185, 129, 0.22);
+}
+
+html[data-color-theme="amber"] {
+  --primary: 38 92% 50%;
+  --primary-foreground: 28 60% 8%;
+  --ring: 38 92% 50%;
+  --info: 32 95% 62%;
+  --sidebar-primary: 38 92% 50%;
+  --sidebar-primary-foreground: 28 60% 8%;
+  --sidebar-ring: 38 92% 50%;
+  --active-glow: 0 0 18px 3px rgba(245, 158, 11, 0.24);
+}
+
+html[data-color-theme="rose"] {
+  --primary: 342 82% 62%;
+  --primary-foreground: 340 42% 10%;
+  --ring: 342 82% 62%;
+  --info: 330 79% 70%;
+  --sidebar-primary: 342 82% 62%;
+  --sidebar-primary-foreground: 340 42% 10%;
+  --sidebar-ring: 342 82% 62%;
+  --active-glow: 0 0 18px 3px rgba(244, 63, 94, 0.22);
+}
+
+/* ─── Light theme overrides (html.light) ─── */
+html.light {
+  --background: 270 33% 98%;
+  --foreground: 258 30% 14%;
+
+  --card: 0 0% 100%;
+  --card-foreground: 258 30% 14%;
+
+  --popover: 0 0% 100%;
+  --popover-foreground: 258 30% 14%;
+
+  --primary: 265 74% 58%;
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 270 22% 94%;
+  --secondary-foreground: 258 30% 14%;
+
+  --muted: 270 20% 92%;
+  --muted-foreground: 255 12% 44%;
+
+  --accent: 270 22% 94%;
+  --accent-foreground: 258 30% 14%;
+
+  --destructive: 0 84% 58%;
+  --destructive-foreground: 0 0% 100%;
+
+  --warning: 38 92% 46%;
+  --warning-foreground: 0 0% 100%;
+
+  --info: 245 84% 62%;
+  --info-foreground: 0 0% 100%;
+
+  --border: 270 17% 87%;
+  --input: 270 17% 91%;
+  --ring: 265 74% 58%;
+
+  --sidebar-background: 270 24% 96%;
+  --sidebar-foreground: 255 12% 44%;
+  --sidebar-primary: 265 74% 58%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 270 20% 91%;
+  --sidebar-accent-foreground: 258 30% 14%;
+  --sidebar-border: 270 17% 87%;
+  --sidebar-ring: 265 74% 58%;
+
+  --card-shadow: 0 0 0 1px rgba(0,0,0,0.06), 0 2px 4px rgba(0,0,0,0.05), 0 4px 12px rgba(0,0,0,0.08);
+  --card-shadow-hover: 0 8px 30px rgba(0,0,0,0.12);
+  --active-glow: 0 0 18px 3px rgba(147, 51, 234, 0.18);
+}
+
+html.light[data-color-theme="blue"] {
+  --primary: 221 78% 56%;
+  --primary-foreground: 0 0% 100%;
+  --ring: 221 78% 56%;
+  --info: 214 84% 58%;
+  --sidebar-primary: 221 78% 56%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-ring: 221 78% 56%;
+  --active-glow: 0 0 18px 3px rgba(59, 130, 246, 0.18);
+}
+
+html.light[data-color-theme="emerald"] {
+  --primary: 160 84% 36%;
+  --primary-foreground: 0 0% 100%;
+  --ring: 160 84% 36%;
+  --info: 168 72% 42%;
+  --sidebar-primary: 160 84% 36%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-ring: 160 84% 36%;
+  --active-glow: 0 0 18px 3px rgba(16, 185, 129, 0.16);
+}
+
+html.light[data-color-theme="amber"] {
+  --primary: 35 92% 46%;
+  --primary-foreground: 0 0% 100%;
+  --ring: 35 92% 46%;
+  --info: 27 88% 50%;
+  --sidebar-primary: 35 92% 46%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-ring: 35 92% 46%;
+  --active-glow: 0 0 18px 3px rgba(245, 158, 11, 0.16);
+}
+
+html.light[data-color-theme="rose"] {
+  --primary: 342 76% 56%;
+  --primary-foreground: 0 0% 100%;
+  --ring: 342 76% 56%;
+  --info: 330 72% 58%;
+  --sidebar-primary: 342 76% 56%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-ring: 342 76% 56%;
+  --active-glow: 0 0 18px 3px rgba(244, 63, 94, 0.16);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans;
+    font-feature-settings: "tnum";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: hsl(var(--background));
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted) / 0.3);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted) / 0.5);
+  }
+}
+
+@layer utilities {
+  .card-shadow {
+    box-shadow: var(--card-shadow);
+  }
+  .card-shadow-hover {
+    box-shadow: var(--card-shadow-hover);
+  }
+  .active-glow {
+    box-shadow: var(--active-glow);
+  }
+  .status-border-active {
+    @apply border-l-4 border-l-primary;
+  }
+  .status-border-error {
+    @apply border-l-4 border-l-destructive;
+  }
+  .status-border-warning {
+    @apply border-l-4 border-l-warning;
+  }
+  .status-border-idle {
+    @apply border-l-4 border-l-muted;
+  }
+  .status-border-cooldown {
+    @apply border-l-4 border-l-info;
+  }
+}
