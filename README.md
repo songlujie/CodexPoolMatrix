@@ -43,6 +43,12 @@
 
 ---
 
+## 🤝 Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the team workflow and branch strategy.
+
+---
+
 ## 🚀 Quick Start
 
 ### 1. Clone
