@@ -30,26 +30,26 @@ const LogsPage = () => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const { t } = useI18n();
 
-  const loadPage = async (level = levelFilter, account = accountFilter) => {
-    const [nextLogs, nextAccounts, nextSettings] = await Promise.all([
-      api.listLogs({ level, account }),
-      api.listAccounts(),
-      api.getSettings(),
-    ]);
-    const [nextCliAuth, nextCliManagedStatus] = await Promise.all([
-      api.getCurrentCodexAuth().catch(() => null),
-      api.getCodexManagedStatus().catch(() => null),
-    ]);
-    setLogs(nextLogs);
-    setAccounts(nextAccounts);
-    setSettings(nextSettings);
-    setCliAuth(nextCliAuth);
-    setCliManagedStatus(nextCliManagedStatus);
-  };
-
   useEffect(() => {
-    loadPage().catch((error: Error) => toast.error(formatAppError(error, '加载日志失败')));
-  }, []);
+    const loadPage = async () => {
+      const [nextLogs, nextAccounts, nextSettings] = await Promise.all([
+        api.listLogs({ level: levelFilter, account: accountFilter }),
+        api.listAccounts(),
+        api.getSettings(),
+      ]);
+      const [nextCliAuth, nextCliManagedStatus] = await Promise.all([
+        api.getCurrentCodexAuth().catch(() => null),
+        api.getCodexManagedStatus().catch(() => null),
+      ]);
+      setLogs(nextLogs);
+      setAccounts(nextAccounts);
+      setSettings(nextSettings);
+      setCliAuth(nextCliAuth);
+      setCliManagedStatus(nextCliManagedStatus);
+    };
+
+    void loadPage().catch((error: Error) => toast.error(formatAppError(error, '加载日志失败')));
+  }, [accountFilter, levelFilter]);
 
   useEffect(() => {
     if (autoScroll && scrollRef.current) {
@@ -59,15 +59,9 @@ const LogsPage = () => {
 
   const currentAccount = accounts.find((account) => account.is_current);
 
-  const handleFilterChange = async (level: LogLevel | 'all', account: string) => {
+  const handleFilterChange = (level: LogLevel | 'all', account: string) => {
     setLevelFilter(level);
     setAccountFilter(account);
-    try {
-      const nextLogs = await api.listLogs({ level, account });
-      setLogs(nextLogs);
-    } catch (error) {
-      toast.error(formatAppError(error, '筛选日志失败'));
-    }
   };
 
   const handleExport = () => {

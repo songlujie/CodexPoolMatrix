@@ -22,6 +22,9 @@ const PLATFORM_LABELS: Record<string, string> = {
 interface AddAccountDialogProps {
   onAccountAdded: (account?: Account) => void;
   platforms?: string[];
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  hideTrigger?: boolean;
 }
 
 type ScannedFile = {
@@ -207,8 +210,14 @@ function LoginStep({ onBack, onSuccess }: LoginStepProps) {
 
 // ─── Main dialog ────────────────────────────────────────────────────────────
 
-export function AddAccountDialog({ onAccountAdded, platforms = ['gpt', 'gemini', 'claude'] }: AddAccountDialogProps) {
-  const [open, setOpen] = useState(false);
+export function AddAccountDialog({
+  onAccountAdded,
+  platforms = ['gpt', 'gemini', 'claude'],
+  open,
+  onOpenChange,
+  hideTrigger = false,
+}: AddAccountDialogProps) {
+  const [internalOpen, setInternalOpen] = useState(false);
   const [view, setView] = useState<'scan' | 'login' | 'api'>('scan');
   const [scanDir, setScanDir] = useState('');
   const [scanning, setScanning] = useState(false);
@@ -229,10 +238,12 @@ export function AddAccountDialog({ onAccountAdded, platforms = ['gpt', 'gemini',
     api_cli_config: '',
   });
   const { t } = useI18n();
+  const isOpen = open ?? internalOpen;
+  const setIsOpen = onOpenChange ?? setInternalOpen;
 
   const handleOpen = () => {
     setView('scan');
-    setOpen(true);
+    setIsOpen(true);
     handleScan();
   };
 
@@ -258,7 +269,7 @@ export function AddAccountDialog({ onAccountAdded, platforms = ['gpt', 'gemini',
       });
       toast.success(`成功添加 API 账号 ${account.account_id}`);
       onAccountAdded(account);
-      setOpen(false);
+      setIsOpen(false);
       setApiForm({
         account_id: '',
         email: '',
@@ -346,7 +357,7 @@ export function AddAccountDialog({ onAccountAdded, platforms = ['gpt', 'gemini',
     if (success > 0) {
       toast.success(`成功添加 ${success} 个账号`);
       onAccountAdded(lastAccount);
-      setOpen(false);
+      setIsOpen(false);
       setScanned([]);
       setSelected(new Set());
     }
@@ -356,15 +367,17 @@ export function AddAccountDialog({ onAccountAdded, platforms = ['gpt', 'gemini',
 
   return (
     <>
-      <button
-        onClick={handleOpen}
-        className="min-h-[220px] rounded-xl border-2 border-dashed border-border/50 flex flex-col items-center justify-center gap-2 text-muted-foreground hover:text-foreground hover:border-primary/40 hover:bg-primary/5 transition-all"
-      >
-        <Plus className="h-8 w-8" />
-        <span className="text-xs font-medium">{t('card.addAccount')}</span>
-      </button>
+      {!hideTrigger && (
+        <button
+          onClick={handleOpen}
+          className="min-h-[220px] rounded-xl border-2 border-dashed border-border/50 flex flex-col items-center justify-center gap-2 text-muted-foreground hover:text-foreground hover:border-primary/40 hover:bg-primary/5 transition-all"
+        >
+          <Plus className="h-8 w-8" />
+          <span className="text-xs font-medium">{t('card.addAccount')}</span>
+        </button>
+      )}
 
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog open={isOpen} onOpenChange={setIsOpen}>
         <DialogContent className="sm:max-w-[520px] max-w-[95vw] overflow-hidden">
           <DialogHeader>
           <DialogTitle>{view === 'api' ? '添加 API 中转站账号' : '添加账号'}</DialogTitle>
@@ -553,7 +566,7 @@ export function AddAccountDialog({ onAccountAdded, platforms = ['gpt', 'gemini',
               </div>
 
               <DialogFooter>
-                <Button variant="outline" onClick={() => setOpen(false)} disabled={adding}>
+                <Button variant="outline" onClick={() => setIsOpen(false)} disabled={adding}>
                   取消
                 </Button>
                 <Button onClick={handleAdd} disabled={adding || selected.size === 0}>
@@ -642,7 +655,7 @@ export function AddAccountDialog({ onAccountAdded, platforms = ['gpt', 'gemini',
               </div>
 
               <DialogFooter>
-                <Button variant="outline" onClick={() => setOpen(false)} disabled={adding}>
+                <Button variant="outline" onClick={() => setIsOpen(false)} disabled={adding}>
                   取消
                 </Button>
                 <Button onClick={handleAddApiAccount} disabled={adding}>

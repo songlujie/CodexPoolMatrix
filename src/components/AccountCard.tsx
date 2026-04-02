@@ -1,11 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { MoreHorizontal, AlertCircle, CheckCircle2, Clock, Zap, Eye, EyeOff } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Account, LiveUsageData } from '@/types';
 import { api } from '@/lib/api';
@@ -13,6 +11,8 @@ import { toast } from 'sonner';
 import { formatDistanceToNow, differenceInDays, differenceInHours } from 'date-fns';
 import { useI18n } from '@/lib/i18n';
 import { PlatformIcon } from './PlatformIcon';
+import { AccountCardCliConfigDialog } from './AccountCardCliConfigDialog';
+import { barColor, maskEmail, oauthTypeBadge, statusBadge, statusBorderClass } from './account-card.constants';
 
 interface AccountCardProps {
   account: Account;
@@ -27,49 +27,6 @@ interface AccountCardProps {
 }
 
 type AuthInfo = Awaited<ReturnType<typeof api.getAccountAuthInfo>>;
-
-
-const statusBorderClass: Record<Account['status'], string> = {
-  active: 'status-border-active',
-  idle: 'status-border-idle',
-  error: 'status-border-error',
-  rate_limited: 'status-border-warning',
-  cooldown: 'status-border-cooldown',
-};
-
-const statusBadge: Record<Account['status'], { label: string; className: string }> = {
-  active: { label: 'ACTIVE', className: 'bg-primary/15 text-primary border-primary/30' },
-  idle: { label: 'IDLE', className: 'bg-muted/30 text-muted-foreground border-muted/50' },
-  error: { label: 'ERROR', className: 'bg-destructive/15 text-destructive border-destructive/30' },
-  rate_limited: { label: 'RATE LIMITED', className: 'bg-warning/15 text-warning border-warning/30' },
-  cooldown: { label: 'COOLDOWN', className: 'bg-info/15 text-info border-info/30' },
-};
-
-const oauthTypeBadge: Record<Account['auth_type'], { label: string; className: string }> = {
-  team: { label: 'TEAM', className: 'bg-info/15 text-info border-info/30' },
-  plus: { label: 'PLUS', className: 'bg-primary/15 text-primary border-primary/30' },
-  free: { label: 'FREE', className: 'bg-muted/30 text-muted-foreground border-muted/50' },
-};
-
-/** 邮箱脱敏：前两位保留，其余打码；域名同理，兼容 qq.com 等短域名 */
-function maskEmail(email: string): string {
-  if (!email || !email.includes('@')) return email;
-  const [local, rest] = email.split('@');
-  if (!rest) return email;
-  const dotIdx = rest.indexOf('.');
-  const domain = dotIdx >= 0 ? rest.slice(0, dotIdx) : rest;
-  const tld    = dotIdx >= 0 ? rest.slice(dotIdx)    : '';
-  const maskedLocal  = local.length  > 2 ? local.slice(0, 2)  + '***' : local;
-  const maskedDomain = domain.length > 2 ? domain.slice(0, 2) + '***' : domain;
-  return `${maskedLocal}@${maskedDomain}${tld}`;
-}
-
-/** 进度条颜色 */
-function barColor(pct: number) {
-  if (pct >= 80) return 'bg-destructive';
-  if (pct >= 50) return 'bg-warning';
-  return 'bg-primary';
-}
 
 export function AccountCard({ account, onSetActive, onPause, onReset, onRemove, refreshKey, viewMode = 'grid', externalUsage, onUsageUpdate }: AccountCardProps) {
   const sb = statusBadge[account.status];
@@ -94,12 +51,13 @@ export function AccountCard({ account, onSetActive, onPause, onReset, onRemove, 
   const [savingCliConfig, setSavingCliConfig] = useState(false);
   const [cliConfigPreview, setCliConfigPreview] = useState('');
   const [previewLoading, setPreviewLoading] = useState(false);
+  const didAutoRefreshRef = useRef(false);
   const cliConfigSummarySource = authInfo?.api_cli_config || account.api_cli_config || '';
   const cliConfigLineCount = cliConfigSummarySource
     ? cliConfigSummarySource.split(/\r?\n/).map(line => line.trim()).filter(Boolean).length
     : 0;
 
-  function formatUsageError(error?: string) {
+  const formatUsageError = useCallback((error?: string) => {
     if (!error) return t('card.checkFailed');
 
     if (error === 'auth_file_not_found') return t('card.authNotFound');
@@ -128,7 +86,7 @@ export function AccountCard({ account, onSetActive, onPause, onReset, onRemove, 
     }
 
     return error;
-  }
+  }, [t]);
 
   function expiryInfo(expiresAt: string | undefined, kind: 'plan' | 'token') {
     if (!expiresAt) return null;
@@ -162,7 +120,7 @@ export function AccountCard({ account, onSetActive, onPause, onReset, onRemove, 
     };
   }
 
-  const fetchAuthInfo = async () => {
+  const fetchAuthInfo = useCallback(async () => {
     setLoadingInfo(true);
     try {
       const info = await api.getAccountAuthInfo(account.id);
@@ -172,10 +130,11 @@ export function AccountCard({ account, onSetActive, onPause, onReset, onRemove, 
     } finally {
       setLoadingInfo(false);
     }
-  };
+  }, [account.id]);
 
   // OAuth 账号做可用性+用量刷新，API 账号做中转站连通性检测
-  const handleRefreshLiveUsage = async () => {
+  const handleRefreshLiveUsage = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent ?? false;
     setFetchingLive(true);
     setCheckingUsage(true);
     setUsageResult(null);
@@ -194,7 +153,9 @@ export function AccountCard({ account, onSetActive, onPause, onReset, onRemove, 
           };
           setLiveUsage(usage);
           onUsageUpdate?.(account.id, usage);
-          toast.success(`${account.account_id} ${t('card.apiRelayOk')}`);
+          if (!silent) {
+            toast.success(`${account.account_id} ${t('card.apiRelayOk')}`);
+          }
         } else {
           const usage: LiveUsageData = {
             ok: true,
@@ -205,7 +166,9 @@ export function AccountCard({ account, onSetActive, onPause, onReset, onRemove, 
           };
           setLiveUsage(usage);
           onUsageUpdate?.(account.id, usage);
-          toast.success(`${account.account_id} ${t('card.codexAvailable')} (5h=${result.primary?.used_percent ?? '?'}%)`);
+          if (!silent) {
+            toast.success(`${account.account_id} ${t('card.codexAvailable')} (5h=${result.primary?.used_percent ?? '?'}%)`);
+          }
         }
       } else if (result.rate_limited) {
         if (result.primary || result.secondary) {
@@ -218,23 +181,31 @@ export function AccountCard({ account, onSetActive, onPause, onReset, onRemove, 
           setLiveUsage(usage);
           onUsageUpdate?.(account.id, usage);
         }
-        toast.warning(`${account.account_id} ${t('card.codexRateLimited')}`);
+        if (!silent) {
+          toast.warning(`${account.account_id} ${t('card.codexRateLimited')}`);
+        }
       } else if (result.status === 401) {
-        toast.error(`${account.account_id} ${t('card.tokenInvalid')}`);
+        if (!silent) {
+          toast.error(`${account.account_id} ${t('card.tokenInvalid')}`);
+        }
       } else {
-        toast.error(`${account.account_id}: ${formatUsageError(result.error)}`);
+        if (!silent) {
+          toast.error(`${account.account_id}: ${formatUsageError(result.error)}`);
+        }
       }
     } catch {
-      toast.error(t('card.checkFailed'));
+      if (!silent) {
+        toast.error(t('card.checkFailed'));
+      }
     } finally {
       setFetchingLive(false);
       setCheckingUsage(false);
     }
-  };
+  }, [account.account_id, account.id, formatUsageError, onUsageUpdate, t]);
 
   useEffect(() => {
-    fetchAuthInfo();
-  }, [account.id, account.auth_file_path, refreshKey]);
+    void fetchAuthInfo();
+  }, [account.auth_file_path, fetchAuthInfo, refreshKey]);
 
   // Sync usage data pushed from parent (batch refresh)
   useEffect(() => {
@@ -249,10 +220,15 @@ export function AccountCard({ account, onSetActive, onPause, onReset, onRemove, 
 
   // 账号变为活跃时自动获取实时用量
   useEffect(() => {
-    if (account.is_current) {
-      handleRefreshLiveUsage();
+    if (!account.is_current) {
+      didAutoRefreshRef.current = false;
+      return;
     }
-  }, [account.is_current]);
+    if (didAutoRefreshRef.current) return;
+
+    didAutoRefreshRef.current = true;
+    void handleRefreshLiveUsage({ silent: true });
+  }, [account.is_current, handleRefreshLiveUsage]);
 
   useEffect(() => {
     if (!cliConfigOpen || !isApiAccount) return;
@@ -312,6 +288,50 @@ export function AccountCard({ account, onSetActive, onPause, onReset, onRemove, 
   const providerBadge = isApiAccount
     ? { label: t('card.provider.api'), className: 'bg-amber-500/10 text-amber-700 border-amber-500/25' }
     : { label: t('card.provider.oauth'), className: 'bg-sky-500/10 text-sky-700 border-sky-500/25' };
+  const handleRefreshToken = async () => {
+    try {
+      toast.info(`正在刷新 ${account.account_id} 的 Token...`);
+      const result = await api.refreshToken(account.id);
+      if (result.ok) {
+        toast.success(`${account.account_id} ${t('card.refreshTokenSuccess')}`);
+        await fetchAuthInfo();
+      } else {
+        toast.error(`刷新失败: ${result.reason}`);
+      }
+    } catch {
+      toast.error(t('card.refreshTokenFailed'));
+    }
+  };
+  const renderMenuContent = () => (
+    <DropdownMenuContent align="end" className="text-xs">
+      <DropdownMenuItem onClick={() => onSetActive(account.id)}>{t('card.menuSetActive')}</DropdownMenuItem>
+      <DropdownMenuItem onClick={() => onPause(account.id)}>{t('card.menuPause')}</DropdownMenuItem>
+      <DropdownMenuItem onClick={() => onReset(account.id)}>{t('card.menuReset')}</DropdownMenuItem>
+      {isApiAccount && (
+        <DropdownMenuItem onClick={() => setCliConfigOpen(true)}>{t('card.menuEditCliConfig')}</DropdownMenuItem>
+      )}
+      {!isApiAccount && (
+        <DropdownMenuItem onClick={handleRefreshToken} className="text-green-500">{t('card.menuRefreshToken')}</DropdownMenuItem>
+      )}
+      <DropdownMenuItem onClick={() => onRemove(account.id)} className="text-destructive">{t('card.menuRemove')}</DropdownMenuItem>
+    </DropdownMenuContent>
+  );
+  const cliConfigDialog = isApiAccount ? (
+    <AccountCardCliConfigDialog
+      accountId={account.account_id}
+      open={cliConfigOpen}
+      onOpenChange={setCliConfigOpen}
+      value={cliConfigValue}
+      onValueChange={setCliConfigValue}
+      preview={cliConfigPreview}
+      previewLoading={previewLoading}
+      saving={savingCliConfig}
+      onSave={() => void handleSaveApiCliConfig()}
+      title={t('card.apiCliConfig')}
+      previewLabel={t('card.apiCliConfigPreview')}
+      emptyLabel={t('card.apiCliConfigEmpty')}
+    />
+  ) : null;
 
   // ── Compact list row ──
   if (viewMode === 'list') {
@@ -414,58 +434,11 @@ export function AccountCard({ account, onSetActive, onPause, onReset, onRemove, 
               <DropdownMenuTrigger className="h-6 w-6 flex items-center justify-center rounded hover:bg-secondary/50 text-muted-foreground">
                 <MoreHorizontal className="h-4 w-4" />
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="text-xs">
-                <DropdownMenuItem onClick={() => onSetActive(account.id)}>{t('card.menuSetActive')}</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => onPause(account.id)}>{t('card.menuPause')}</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => onReset(account.id)}>{t('card.menuReset')}</DropdownMenuItem>
-                {isApiAccount && (
-                  <DropdownMenuItem onClick={() => setCliConfigOpen(true)}>{t('card.menuEditCliConfig')}</DropdownMenuItem>
-                )}
-                {!isApiAccount && (
-                  <DropdownMenuItem onClick={async () => {
-                    try {
-                      toast.info(`正在刷新 ${account.account_id} 的 Token...`);
-                      const result = await api.refreshToken(account.id);
-                      if (result.ok) { toast.success(t('card.refreshTokenSuccess')); fetchAuthInfo(); }
-                      else toast.error(`刷新失败: ${result.reason}`);
-                    } catch { toast.error(t('card.refreshTokenFailed')); }
-                  }} className="text-green-500">{t('card.menuRefreshToken')}</DropdownMenuItem>
-                )}
-                <DropdownMenuItem onClick={() => onRemove(account.id)} className="text-destructive">{t('card.menuRemove')}</DropdownMenuItem>
-              </DropdownMenuContent>
+              {renderMenuContent()}
             </DropdownMenu>
           </div>
         </motion.div>
-        <Dialog open={cliConfigOpen} onOpenChange={setCliConfigOpen}>
-          <DialogContent className="sm:max-w-[680px] max-h-[85vh] overflow-hidden flex flex-col">
-            <DialogHeader>
-              <DialogTitle className="text-sm">{account.account_id} · {t('card.apiCliConfig')}</DialogTitle>
-            </DialogHeader>
-            <div className="flex-1 min-h-0 space-y-2 overflow-y-auto pr-1">
-              <p className="text-[11px] text-muted-foreground">
-                `base_url` 仍由账号的 Base URL 单独控制，这里只写 provider 内其余 TOML 配置。
-              </p>
-              <Textarea
-                value={cliConfigValue}
-                onChange={(e) => setCliConfigValue(e.target.value)}
-                className="min-h-[180px] text-xs font-mono bg-input border-border/50"
-                placeholder={`wire_api = "chat"\nquery_params = { api-version = "2025-01-01-preview" }`}
-              />
-              <div className="space-y-1">
-                <p className="text-[11px] text-muted-foreground">{t('card.apiCliConfigPreview')}</p>
-                <div className="max-h-40 overflow-y-auto rounded-md border border-border/50 bg-muted/20 px-3 py-2 font-mono text-[11px] whitespace-pre-wrap break-all text-foreground/85">
-                  {previewLoading ? '预览生成中...' : (cliConfigPreview || t('card.apiCliConfigEmpty'))}
-                </div>
-              </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setCliConfigOpen(false)} disabled={savingCliConfig}>取消</Button>
-              <Button onClick={handleSaveApiCliConfig} disabled={savingCliConfig}>
-                {savingCliConfig ? '保存中...' : '保存配置'}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        {cliConfigDialog}
       </>
     );
   }
@@ -504,29 +477,7 @@ export function AccountCard({ account, onSetActive, onPause, onReset, onRemove, 
             <DropdownMenuTrigger className="h-6 w-6 flex items-center justify-center rounded hover:bg-secondary/50 text-muted-foreground">
               <MoreHorizontal className="h-4 w-4" />
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="text-xs">
-              <DropdownMenuItem onClick={() => onSetActive(account.id)}>{t('card.menuSetActive')}</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onPause(account.id)}>{t('card.menuPause')}</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onReset(account.id)}>{t('card.menuReset')}</DropdownMenuItem>
-              {isApiAccount && (
-                <DropdownMenuItem onClick={() => setCliConfigOpen(true)}>{t('card.menuEditCliConfig')}</DropdownMenuItem>
-              )}
-              {!isApiAccount && (
-                <DropdownMenuItem onClick={async () => {
-                  try {
-                    toast.info(`正在刷新 ${account.account_id} 的 Token...`);
-                    const result = await api.refreshToken(account.id);
-                    if (result.ok) {
-                      toast.success(`${account.account_id} ${t('card.refreshTokenSuccess')}`);
-                      fetchAuthInfo();
-                    } else {
-                      toast.error(`刷新失败: ${result.reason}`);
-                    }
-                  } catch { toast.error(t('card.refreshTokenFailed')); }
-                }} className="text-green-500">{t('card.menuRefreshToken')}</DropdownMenuItem>
-              )}
-              <DropdownMenuItem onClick={() => onRemove(account.id)} className="text-destructive">{t('card.menuRemove')}</DropdownMenuItem>
-            </DropdownMenuContent>
+            {renderMenuContent()}
           </DropdownMenu>
         </div>
       </div>
@@ -789,37 +740,7 @@ export function AccountCard({ account, onSetActive, onPause, onReset, onRemove, 
           {tokenExpiry.label}{t('card.tokenExpireWarning')}
         </div>
       )}
-
-      <Dialog open={cliConfigOpen} onOpenChange={setCliConfigOpen}>
-        <DialogContent className="sm:max-w-[680px] max-h-[85vh] overflow-hidden flex flex-col">
-          <DialogHeader>
-            <DialogTitle className="text-sm">{account.account_id} · {t('card.apiCliConfig')}</DialogTitle>
-          </DialogHeader>
-          <div className="flex-1 min-h-0 space-y-2 overflow-y-auto pr-1">
-            <p className="text-[11px] text-muted-foreground">
-              `base_url` 仍由账号的 Base URL 单独控制，这里只写 provider 内其余 TOML 配置。
-            </p>
-            <Textarea
-              value={cliConfigValue}
-              onChange={(e) => setCliConfigValue(e.target.value)}
-              className="min-h-[180px] text-xs font-mono bg-input border-border/50"
-              placeholder={`wire_api = "chat"\nquery_params = { api-version = "2025-01-01-preview" }`}
-            />
-            <div className="space-y-1">
-              <p className="text-[11px] text-muted-foreground">{t('card.apiCliConfigPreview')}</p>
-              <div className="max-h-40 overflow-y-auto rounded-md border border-border/50 bg-muted/20 px-3 py-2 font-mono text-[11px] whitespace-pre-wrap break-all text-foreground/85">
-                {previewLoading ? '预览生成中...' : (cliConfigPreview || t('card.apiCliConfigEmpty'))}
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCliConfigOpen(false)} disabled={savingCliConfig}>取消</Button>
-            <Button onClick={handleSaveApiCliConfig} disabled={savingCliConfig}>
-              {savingCliConfig ? '保存中...' : '保存配置'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {cliConfigDialog}
     </motion.div>
   );
 }

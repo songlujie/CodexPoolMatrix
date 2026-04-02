@@ -1,9 +1,7 @@
 # CodexPoolMatrix
 
-[![Version](https://img.shields.io/badge/version-2.0.0-green?style=flat-square)](https://github.com/songlujie/CodexPoolMatrix)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/songlujie/CodexPoolMatrix?style=flat-square)](https://github.com/songlujie/CodexPoolMatrix/stargazers)
-[![Contributors](https://img.shields.io/github/contributors/songlujie/CodexPoolMatrix?style=flat-square)](https://github.com/songlujie/CodexPoolMatrix/graphs/contributors)
 [![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen?style=flat-square)](https://nodejs.org)
 
 多账号 Codex 管理仪表板，支持 OAuth 账号和 API 中转站账号，提供实时用量检测、自动轮换、批量 Token 刷新，以及可选的 OpenClaw 同步。

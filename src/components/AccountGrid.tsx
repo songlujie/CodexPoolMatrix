@@ -1,15 +1,19 @@
-import { useState, useEffect } from 'react';
+import { lazy, Suspense, useCallback, useState, useEffect } from 'react';
 import { AnimatePresence } from 'framer-motion';
-import { Trash2, Zap } from 'lucide-react';
+import { Plus, Trash2, Zap } from 'lucide-react';
 import { Account, LiveUsageData } from '@/types';
 import { AccountCard } from './AccountCard';
 import { FilterBar } from './FilterBar';
-import { AddAccountDialog } from './AddAccountDialog';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { formatAppError } from '@/lib/errors';
 import { useI18n } from '@/lib/i18n';
+
+const AddAccountDialog = lazy(async () => {
+  const module = await import('./AddAccountDialog');
+  return { default: module.AddAccountDialog };
+});
 
 interface AccountGridProps {
   accounts: Account[];
@@ -29,6 +33,8 @@ export function AccountGrid({ accounts, onAction, onRemove, onAccountAdded, onCl
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const [clearingAll, setClearingAll] = useState(false);
+  const [addDialogRequested, setAddDialogRequested] = useState(false);
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
   const { t } = useI18n();
 
   // Merge usage data pushed from parent (batch check from RightSidebar)
@@ -98,8 +104,13 @@ export function AccountGrid({ accounts, onAction, onRemove, onAccountAdded, onCl
     }
   };
 
-  const handleUsageUpdate = (id: string, usage: LiveUsageData) => {
+  const handleUsageUpdate = useCallback((id: string, usage: LiveUsageData) => {
     setUsageMap(prev => ({ ...prev, [id]: usage }));
+  }, []);
+
+  const handleOpenAddDialog = () => {
+    setAddDialogRequested(true);
+    setAddDialogOpen(true);
   };
 
   const handleCheckAllUsage = async () => {
@@ -203,7 +214,26 @@ export function AccountGrid({ accounts, onAction, onRemove, onAccountAdded, onCl
         </AnimatePresence>
 
         {/* Add Account Card */}
-        <AddAccountDialog onAccountAdded={onAccountAdded} platforms={platforms} />
+        <button
+          onClick={handleOpenAddDialog}
+          onMouseEnter={() => setAddDialogRequested(true)}
+          className="min-h-[220px] rounded-xl border-2 border-dashed border-border/50 flex flex-col items-center justify-center gap-2 text-muted-foreground hover:text-foreground hover:border-primary/40 hover:bg-primary/5 transition-all"
+        >
+          <Plus className="h-8 w-8" />
+          <span className="text-xs font-medium">{t('card.addAccount')}</span>
+        </button>
+
+        {addDialogRequested && (
+          <Suspense fallback={null}>
+            <AddAccountDialog
+              hideTrigger
+              open={addDialogOpen}
+              onOpenChange={setAddDialogOpen}
+              onAccountAdded={onAccountAdded}
+              platforms={platforms}
+            />
+          </Suspense>
+        )}
       </div>
     </div>
   );
