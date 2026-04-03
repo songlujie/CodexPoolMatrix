@@ -133,15 +133,23 @@ const LogsPage = () => {
             ) : (
               <div className="space-y-0.5">
                 {logs.map((log) => (
-                  <div key={log.id} className="flex gap-3 py-0.5 hover:bg-secondary/20 px-2 rounded">
+                  <div
+                    key={log.id}
+                    className="grid grid-cols-[72px_52px_minmax(120px,180px)_minmax(0,1fr)] items-start gap-3 py-1 hover:bg-secondary/20 px-2 rounded"
+                  >
                     <span className="text-muted-foreground shrink-0 tabular-nums">
                       {new Date(log.created_at).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                     </span>
                     <span className={`shrink-0 w-12 uppercase font-semibold ${levelColors[log.level]}`}>
                       {log.level}
                     </span>
-                    <span className="text-info shrink-0 w-16">{log.account_name || '—'}</span>
-                    <span className="text-foreground/80">{log.message}</span>
+                    <span
+                      className="min-w-0 truncate text-info"
+                      title={log.account_name || '—'}
+                    >
+                      {log.account_name || '—'}
+                    </span>
+                    <span className="min-w-0 break-words text-foreground/80">{log.message}</span>
                   </div>
                 ))}
               </div>
