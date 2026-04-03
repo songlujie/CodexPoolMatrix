@@ -1,8 +1,35 @@
 import { Account, LogEntry, PoolSettings, Task } from '@/types';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+const isDesktopRuntime = typeof window !== 'undefined' && Boolean(window.codexPoolDesktop?.isElectron);
+
+async function desktopRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await window.codexPoolDesktop!.request({
+    path,
+    method: init?.method || 'GET',
+    headers: init?.headers,
+    body: init?.body ? JSON.parse(String(init.body)) : undefined,
+  });
+
+  if (!response.ok) {
+    const payload = response.data && typeof response.data === 'object'
+      ? response.data
+      : { message: typeof response.data === 'string' ? response.data : 'Request failed' };
+    throw new Error(payload.message || 'Request failed');
+  }
+
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
+  return response.data as T;
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  if (isDesktopRuntime) {
+    return desktopRequest<T>(path, init);
+  }
+
   const response = await fetch(`${API_BASE}${path}`, {
     headers: {
       'Content-Type': 'application/json',
@@ -105,12 +132,13 @@ export const api = {
   }>('/api/codex/current-auth'),
   getCodexManagedStatus: () => request<{
     ok: boolean;
+    runtime_mode?: 'codex' | 'claude' | null;
     current_account_id?: string | null;
     current_provider_mode?: 'oauth' | 'api' | null;
     cli_managed?: boolean;
     cli_provider?: string | null;
     cli_model?: string | null;
-    matrix_state_mode?: 'api' | null;
+    matrix_state_mode?: 'api' | 'oauth' | null;
     matrix_state_account_id?: string | null;
     expected_account_id?: string | null;
     config_path?: string | null;

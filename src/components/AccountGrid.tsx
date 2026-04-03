@@ -18,7 +18,7 @@ const AddAccountDialog = lazy(async () => {
 interface AccountGridProps {
   accounts: Account[];
   onAction: (action: 'setActive' | 'pause' | 'reset', id: string) => void;
-  onRemove: (id: string) => void;
+  onRemove: (id: string) => Promise<void>;
   onAccountAdded: () => void;
   onClearAll: () => void;
   refreshKey?: number;
@@ -28,7 +28,7 @@ interface AccountGridProps {
 export function AccountGrid({ accounts, onAction, onRemove, onAccountAdded, onClearAll, refreshKey, pushedUsageMap }: AccountGridProps) {
   const [platformFilter, setPlatformFilter] = useState<string | 'all'>('all');
   const [usageMap, setUsageMap] = useState<Record<string, LiveUsageData>>({});
-  const [platforms, setPlatforms] = useState<string[]>(['gpt', 'gemini', 'claude']);
+  const [platforms, setPlatforms] = useState<string[]>(['gpt', 'gemini']);
   const [search, setSearch] = useState('');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [lastRefresh, setLastRefresh] = useState(new Date());
@@ -73,8 +73,14 @@ export function AccountGrid({ accounts, onAction, onRemove, onAccountAdded, onCl
     toast.success(t('toast.accountReset'));
   };
 
-  const handleRemove = (id: string) => {
-    onRemove(id);
+  const handleRemove = async (id: string) => {
+    const target = accounts.find((account) => account.id === id);
+    if (target?.is_current) {
+      toast.warning(t('toast.accountCurrentCannotDelete'));
+      return;
+    }
+
+    await onRemove(id);
     toast.success(t('toast.accountRemoved'));
   };
 

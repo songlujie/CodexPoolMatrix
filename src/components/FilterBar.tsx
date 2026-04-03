@@ -8,7 +8,6 @@ import { useI18n } from '@/lib/i18n';
 const PLATFORM_LABELS: Record<string, string> = {
   gpt: 'GPT',
   gemini: 'Gemini',
-  claude: 'Claude',
 };
 
 interface FilterBarProps {
@@ -96,7 +95,7 @@ export function FilterBar({
                 {platformLabel(p)}
               </button>
               {/* Delete button — only for non-default platforms */}
-              {!['gpt', 'gemini', 'claude'].includes(p) && (
+              {!['gpt', 'gemini'].includes(p) && (
                 <button
                   onClick={(e) => { e.stopPropagation(); onDeletePlatform(p); }}
                   className="absolute right-0.5 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity h-3.5 w-3.5 flex items-center justify-center rounded-full text-muted-foreground hover:text-destructive"

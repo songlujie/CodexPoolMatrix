@@ -16,7 +16,6 @@ import { useI18n } from '@/lib/i18n';
 const PLATFORM_LABELS: Record<string, string> = {
   gpt: 'GPT',
   gemini: 'Gemini',
-  claude: 'Claude',
 };
 
 interface AddAccountDialogProps {
@@ -68,7 +67,7 @@ function LoginStep({ onBack, onSuccess }: LoginStepProps) {
         setOutput(s.output);
         if (s.status === 'success' || s.status === 'error') {
           stopPolling();
-          if (s.status === 'success') {
+          if (s.status === 'success' && !s.error) {
             // Wait a beat then trigger scan refresh
             setTimeout(() => onSuccess(), 1200);
           }
@@ -91,9 +90,9 @@ function LoginStep({ onBack, onSuccess }: LoginStepProps) {
   // Auto-scroll output
   useEffect(() => {
     if (outputRef.current) {
-      outputRef.current.scrollTop = outputRef.current.scrollHeight;
+      outputRef.current.scrollTop = status === 'error' ? 0 : outputRef.current.scrollHeight;
     }
-  }, [output]);
+  }, [output, status]);
 
   const handleStart = async () => {
     try {
@@ -104,7 +103,13 @@ function LoginStep({ onBack, onSuccess }: LoginStepProps) {
       startPolling();
     } catch (e) {
       setStatus('error');
-      setMessage((e as Error).message);
+      try {
+        const s = await api.getCodexLoginStatus();
+        setMessage(s.message || (e as Error).message);
+        setOutput(s.output || '');
+      } catch {
+        setMessage((e as Error).message);
+      }
     }
   };
 
@@ -141,7 +146,7 @@ function LoginStep({ onBack, onSuccess }: LoginStepProps) {
               <p className="text-sm font-semibold">一键登录 OpenAI</p>
               <p className="text-xs text-muted-foreground mt-1">
                 点击后浏览器会自动打开 OpenAI 授权页面<br />
-                完成授权后 auth 文件会自动保存到项目中
+                完成授权后 auth 文件会自动保存到本地账号目录
               </p>
             </div>
             <Button onClick={handleStart} className="gap-2">
@@ -186,6 +191,14 @@ function LoginStep({ onBack, onSuccess }: LoginStepProps) {
               <p className="text-sm font-semibold text-destructive">登录失败</p>
               <p className="text-xs text-muted-foreground mt-1">{message}</p>
             </div>
+            {output && (
+              <div
+                ref={outputRef}
+                className="max-h-48 w-full overflow-y-auto overflow-x-hidden rounded-lg border border-destructive/20 bg-background/70 px-3 py-2 text-left font-mono text-[10px] text-muted-foreground whitespace-pre-wrap break-all"
+              >
+                {output}
+              </div>
+            )}
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={handleStart} className="text-xs gap-1.5">
                 <RefreshCw className="h-3 w-3" /> 重试
@@ -196,7 +209,7 @@ function LoginStep({ onBack, onSuccess }: LoginStepProps) {
       </div>
 
       {/* Raw output log */}
-      {output && (
+      {output && status !== 'error' && (
         <div
           ref={outputRef}
           className="max-h-32 overflow-y-auto overflow-x-hidden rounded-lg bg-muted/20 border border-border/40 px-3 py-2 font-mono text-[10px] text-muted-foreground whitespace-pre-wrap break-all"
@@ -212,7 +225,7 @@ function LoginStep({ onBack, onSuccess }: LoginStepProps) {
 
 export function AddAccountDialog({
   onAccountAdded,
-  platforms = ['gpt', 'gemini', 'claude'],
+  platforms = ['gpt', 'gemini'],
   open,
   onOpenChange,
   hideTrigger = false,
@@ -446,7 +459,7 @@ export function AddAccountDialog({
                     value={scanDir}
                     onChange={e => setScanDir(e.target.value)}
                     className="flex-1 text-xs font-mono"
-                    placeholder="留空使用项目内 accounts/ 目录"
+                    placeholder="留空使用默认本地 accounts/ 目录"
                     onKeyDown={e => e.key === 'Enter' && handleScan()}
                   />
                   <Button
@@ -619,12 +632,10 @@ export function AddAccountDialog({
                     placeholder={`wire_api = "chat"\nquery_params = { api-version = "2025-01-01-preview" }`}
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-1.5">
-                    <div className="flex items-center justify-between gap-2">
-                      <Label className="text-xs text-muted-foreground">{t('addAccount.apiGroup')}</Label>
-                      <span className="text-[10px] text-muted-foreground">{t('addAccount.apiGroupHint')}</span>
-                    </div>
+                    <Label className="text-xs text-muted-foreground">{t('addAccount.apiGroup')}</Label>
+                    <p className="text-[10px] leading-4 text-muted-foreground">{t('addAccount.apiGroupHint')}</p>
                     <Select value={apiForm.auth_type} onValueChange={value => setApiForm(prev => ({ ...prev, auth_type: value as AccountType }))}>
                       <SelectTrigger className="h-8 text-xs bg-input border-border/50">
                         <SelectValue />
@@ -638,6 +649,7 @@ export function AddAccountDialog({
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs text-muted-foreground">{t('addAccount.apiCategory')}</Label>
+                    <p className="text-[10px] leading-4 text-muted-foreground">用于账号筛选和分组展示</p>
                     <Select value={selectedPlatform} onValueChange={setSelectedPlatform}>
                       <SelectTrigger className="h-8 text-xs bg-input border-border/50">
                         <SelectValue />

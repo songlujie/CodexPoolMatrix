@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -9,8 +8,8 @@ import { useTheme } from '@/lib/theme';
 
 interface HeaderProps {
   activeAccount: string;
-  mode: 'codex' | 'trae';
-  onModeChange: (mode: 'codex' | 'trae') => void;
+  mode: 'codex' | 'claude';
+  onModeChange: (mode: 'codex' | 'claude') => void;
 }
 
 const LANG_FLAG: Record<string, { flag: string; label: string }> = {
@@ -100,15 +99,9 @@ export function Header({ activeAccount, mode, onModeChange }: HeaderProps) {
           <span className="font-medium text-foreground">{activeAccount}</span>
         </div>
 
-        <Select value={mode} onValueChange={(v) => onModeChange(v as 'codex' | 'trae')}>
-          <SelectTrigger className="h-7 w-24 text-xs bg-secondary border-border/50">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="codex">Codex</SelectItem>
-            <SelectItem value="trae">Trae</SelectItem>
-          </SelectContent>
-        </Select>
+        <div className="flex h-7 items-center rounded-full border border-border/60 bg-secondary/45 px-3 text-xs font-medium text-foreground">
+          Codex
+        </div>
 
         {/* Theme toggle */}
         <Button

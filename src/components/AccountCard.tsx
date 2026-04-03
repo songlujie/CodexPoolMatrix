@@ -19,7 +19,7 @@ interface AccountCardProps {
   onSetActive: (id: string) => void;
   onPause: (id: string) => void;
   onReset: (id: string) => void;
-  onRemove: (id: string) => void;
+  onRemove: (id: string) => Promise<void>;
   refreshKey?: number;
   viewMode?: 'grid' | 'list';
   externalUsage?: LiveUsageData | null;
@@ -288,6 +288,7 @@ export function AccountCard({ account, onSetActive, onPause, onReset, onRemove, 
   const providerBadge = isApiAccount
     ? { label: t('card.provider.api'), className: 'bg-amber-500/10 text-amber-700 border-amber-500/25' }
     : { label: t('card.provider.oauth'), className: 'bg-sky-500/10 text-sky-700 border-sky-500/25' };
+  const deleteDisabled = account.is_current;
   const handleRefreshToken = async () => {
     try {
       toast.info(`正在刷新 ${account.account_id} 的 Token...`);
@@ -313,7 +314,17 @@ export function AccountCard({ account, onSetActive, onPause, onReset, onRemove, 
       {!isApiAccount && (
         <DropdownMenuItem onClick={handleRefreshToken} className="text-green-500">{t('card.menuRefreshToken')}</DropdownMenuItem>
       )}
-      <DropdownMenuItem onClick={() => onRemove(account.id)} className="text-destructive">{t('card.menuRemove')}</DropdownMenuItem>
+      <DropdownMenuItem
+        onClick={() => {
+          if (!deleteDisabled) {
+            void onRemove(account.id);
+          }
+        }}
+        disabled={deleteDisabled}
+        className={deleteDisabled ? 'text-muted-foreground' : 'text-destructive'}
+      >
+        {deleteDisabled ? t('card.menuRemoveDisabled') : t('card.menuRemove')}
+      </DropdownMenuItem>
     </DropdownMenuContent>
   );
   const cliConfigDialog = isApiAccount ? (

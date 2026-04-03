@@ -99,7 +99,7 @@ export const defaultSettings: PoolSettings = {
   openclaw_endpoint: 'https://api.openclaw.io/v1',
   openclaw_api_key: '',
   codex_path: '',
-  trae_path: '',
+  claude_path: '',
   mode: 'codex',
   auto_launch: false,
 };

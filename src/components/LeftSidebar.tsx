@@ -22,12 +22,13 @@ interface LeftSidebarProps {
   } | null;
   cliManagedStatus?: {
     ok: boolean;
+    runtime_mode?: 'codex' | 'claude' | null;
     current_account_id?: string | null;
     current_provider_mode?: 'oauth' | 'api' | null;
     cli_managed?: boolean;
     cli_provider?: string | null;
     cli_model?: string | null;
-    matrix_state_mode?: 'api' | null;
+    matrix_state_mode?: 'api' | 'oauth' | null;
     matrix_state_account_id?: string | null;
     expected_account_id?: string | null;
     config_path?: string | null;

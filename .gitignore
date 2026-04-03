@@ -38,3 +38,8 @@ accounts/
 *.pid
 *.pid.lock
 *.seed
+.codexpoolmatrix/
+.electron-cache/
+.electron-dist/
+electron-v*.zip
+release/
