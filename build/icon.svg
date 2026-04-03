@@ -16,10 +16,18 @@
       <stop offset="0" stop-color="#fbbf24"/>
       <stop offset="1" stop-color="#f97316"/>
     </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="28" stdDeviation="28" flood-color="#020617" flood-opacity="0.28"/>
+    </filter>
   </defs>
 
   <rect x="64" y="64" width="896" height="896" rx="208" fill="url(#bg)"/>
-  <rect x="172" y="172" width="680" height="680" rx="168" fill="url(#panel)" stroke="rgba(148,163,184,0.18)" stroke-width="4"/>
+  <rect x="104" y="104" width="816" height="816" rx="176" fill="none" stroke="rgba(255,255,255,0.1)"/>
+
+  <g filter="url(#shadow)">
+    <rect x="172" y="172" width="680" height="680" rx="168" fill="url(#panel)"/>
+    <rect x="172" y="172" width="680" height="680" rx="168" fill="none" stroke="rgba(148,163,184,0.18)" stroke-width="4"/>
+  </g>
 
   <g fill="url(#cell)">
     <rect x="236" y="236" width="164" height="164" rx="44"/>
@@ -33,5 +41,13 @@
 
   <rect x="624" y="430" width="164" height="164" rx="44" fill="#0b1220" stroke="rgba(148,163,184,0.2)" stroke-width="4"/>
   <circle cx="728" cy="512" r="26" fill="url(#accent)"/>
-  <path d="M830 286c26 22 42 57 42 94 0 65-48 119-110 127" fill="none" stroke="url(#accent)" stroke-linecap="round" stroke-width="20" opacity="0.9"/>
+
+  <path
+    d="M830 286c26 22 42 57 42 94 0 65-48 119-110 127"
+    fill="none"
+    stroke="url(#accent)"
+    stroke-linecap="round"
+    stroke-width="20"
+    opacity="0.9"
+  />
 </svg>

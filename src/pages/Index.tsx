@@ -73,6 +73,7 @@ const Index = () => {
       await loadDashboard();
     } catch (error) {
       toast.error(formatAppError(error, '删除账号失败'));
+      throw error;
     }
   }, []);
 

@@ -39,7 +39,7 @@ export function AccountCardCliConfigDialog({
         </DialogHeader>
         <div className="flex-1 min-h-0 space-y-2 overflow-y-auto pr-1">
           <p className="text-[11px] text-muted-foreground">
-            `base_url` 仍由账号的 Base URL 单独控制，这里只写 provider 内其余 TOML 配置。
+            `base_url` 仍由账号的 Base URL 单独控制，这里只写 provider 内其余 TOML 配置；不要写 table，也不要重复 key。
           </p>
           <Textarea
             value={value}

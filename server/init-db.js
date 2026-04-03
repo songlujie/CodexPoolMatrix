@@ -1,7 +1,26 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import mysql from 'mysql2/promise';
 import { config } from './config.js';
-import { pool } from './db.js';
+import { isSqlite, pool } from './db.js';
 import { createSeedAccounts, createSeedTasks, createSeedLogs, defaultSettings } from './seed-data.js';
+
+function shouldSeedSampleData() {
+  const explicit = process.env.DB_SEED_SAMPLE_DATA?.trim().toLowerCase();
+  if (explicit) {
+    return ['1', 'true', 'yes', 'on'].includes(explicit);
+  }
+
+  if (process.env.DESKTOP_RUNTIME === '1') {
+    return false;
+  }
+
+  return process.env.NODE_ENV !== 'production';
+}
+
+function nowExpression() {
+  return isSqlite ? 'CURRENT_TIMESTAMP' : 'NOW()';
+}
 
 function getAdminConnectionOptions() {
   if (config.db.socketPath) {
@@ -21,12 +40,102 @@ function getAdminConnectionOptions() {
 }
 
 async function ensureDatabase() {
+  if (isSqlite) {
+    await fs.mkdir(path.dirname(config.db.sqlitePath), { recursive: true });
+    return;
+  }
+
   const connection = await mysql.createConnection(getAdminConnectionOptions());
   await connection.query(`CREATE DATABASE IF NOT EXISTS \`${config.db.database}\``);
   await connection.end();
 }
 
-async function createTables() {
+async function createTablesForSqlite() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS accounts (
+      id TEXT PRIMARY KEY,
+      account_id TEXT NOT NULL,
+      email TEXT NOT NULL,
+      auth_type TEXT NOT NULL,
+      auth_file_path TEXT NOT NULL,
+      provider_mode TEXT NOT NULL DEFAULT 'oauth',
+      api_base_url TEXT NOT NULL DEFAULT '',
+      api_key TEXT NOT NULL DEFAULT '',
+      api_model TEXT NOT NULL DEFAULT '',
+      api_cli_config TEXT NULL,
+      status TEXT NOT NULL,
+      is_current INTEGER NOT NULL DEFAULT 0,
+      last_login_at TEXT NOT NULL,
+      total_tasks_completed INTEGER NOT NULL DEFAULT 0,
+      success_rate REAL NOT NULL DEFAULT 0,
+      session_start_at TEXT NOT NULL,
+      total_session_seconds INTEGER NOT NULL DEFAULT 0,
+      requests_this_minute INTEGER NOT NULL DEFAULT 0,
+      tokens_used_percent INTEGER NOT NULL DEFAULT 0,
+      last_request_at TEXT NOT NULL,
+      uptime_percent REAL NOT NULL DEFAULT 0,
+      platform TEXT NOT NULL DEFAULT 'gpt',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS tasks (
+      id TEXT PRIMARY KEY,
+      description TEXT NOT NULL,
+      assigned_account_id TEXT NULL,
+      status TEXT NOT NULL,
+      priority TEXT NOT NULL,
+      result TEXT NULL,
+      error_message TEXT NULL,
+      retry_count INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      started_at TEXT NULL,
+      completed_at TEXT NULL,
+      FOREIGN KEY (assigned_account_id) REFERENCES accounts(id) ON DELETE SET NULL
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS logs (
+      id TEXT PRIMARY KEY,
+      account_id TEXT NULL,
+      level TEXT NOT NULL,
+      message TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE SET NULL
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS settings (
+      id INTEGER PRIMARY KEY,
+      strategy TEXT NOT NULL,
+      auto_rotation INTEGER NOT NULL DEFAULT 1,
+      rest_after_tasks INTEGER NOT NULL,
+      cooldown_minutes INTEGER NOT NULL,
+      rate_limit_buffer INTEGER NOT NULL,
+      max_concurrent_tasks INTEGER NOT NULL,
+      global_rate_limit INTEGER NOT NULL,
+      auto_retry INTEGER NOT NULL DEFAULT 1,
+      max_retries INTEGER NOT NULL,
+      task_timeout_minutes INTEGER NOT NULL,
+      auto_dispatch INTEGER NOT NULL DEFAULT 1,
+      openclaw_endpoint TEXT NOT NULL,
+      openclaw_api_key TEXT NOT NULL,
+      codex_path TEXT NOT NULL,
+      trae_path TEXT NOT NULL,
+      mode TEXT NOT NULL,
+      auto_launch INTEGER NOT NULL DEFAULT 0,
+      auto_token_refresh INTEGER NOT NULL DEFAULT 1,
+      token_refresh_interval_hours INTEGER NOT NULL DEFAULT 72,
+      updated_at TEXT NOT NULL
+    )
+  `);
+}
+
+async function createTablesForMysql() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS accounts (
       id VARCHAR(64) PRIMARY KEY,
@@ -111,7 +220,21 @@ async function createTables() {
   `);
 }
 
+async function createTables() {
+  if (isSqlite) {
+    await createTablesForSqlite();
+    return;
+  }
+
+  await createTablesForMysql();
+}
+
 async function createIndexIfMissing(tableName, indexName, columnsSql) {
+  if (isSqlite) {
+    await pool.query(`CREATE INDEX IF NOT EXISTS \`${indexName}\` ON \`${tableName}\` (${columnsSql})`);
+    return;
+  }
+
   const [rows] = await pool.query(
     `SELECT COUNT(*) AS count
      FROM information_schema.statistics
@@ -164,8 +287,8 @@ async function seedAccounts() {
         id, account_id, email, auth_type, auth_file_path, status, is_current,
         last_login_at, total_tasks_completed, success_rate, session_start_at,
         total_session_seconds, requests_this_minute, tokens_used_percent,
-        last_request_at, uptime_percent, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        last_request_at, uptime_percent, platform, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         account.id,
         account.account_id,
@@ -183,6 +306,7 @@ async function seedAccounts() {
         account.tokens_used_percent,
         account.last_request_at,
         account.uptime_percent,
+        account.platform || 'gpt',
         account.created_at,
         account.updated_at,
       ],
@@ -233,7 +357,7 @@ async function seedSettings() {
       max_concurrent_tasks, global_rate_limit, auto_retry, max_retries, task_timeout_minutes,
       auto_dispatch, openclaw_endpoint, openclaw_api_key, codex_path, trae_path,
       mode, auto_launch, auto_token_refresh, token_refresh_interval_hours, updated_at
-    ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+    ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${nowExpression()})`,
     [
       defaultSettings.strategy,
       defaultSettings.auto_rotation,
@@ -249,7 +373,7 @@ async function seedSettings() {
       defaultSettings.openclaw_endpoint,
       defaultSettings.openclaw_api_key,
       defaultSettings.codex_path,
-      defaultSettings.trae_path,
+      defaultSettings.claude_path,
       defaultSettings.mode,
       defaultSettings.auto_launch,
       defaultSettings.auto_token_refresh,
@@ -258,19 +382,38 @@ async function seedSettings() {
   );
 }
 
+async function addColumnIfMissing(tableName, columnName, definition) {
+  if (!isSqlite) {
+    try {
+      await pool.query(`ALTER TABLE ${tableName} ADD COLUMN ${definition}`);
+    } catch {
+      // Existing MySQL installs may already have the column.
+    }
+    return;
+  }
+
+  const [columns] = await pool.query(`PRAGMA table_info(${tableName})`);
+  if (columns.some((column) => column.name === columnName)) {
+    return;
+  }
+
+  await pool.query(`ALTER TABLE ${tableName} ADD COLUMN ${definition}`);
+}
+
 async function migrateSettings() {
   const migrations = [
-    "ALTER TABLE settings ADD COLUMN auto_token_refresh BOOLEAN NOT NULL DEFAULT TRUE",
-    "ALTER TABLE settings ADD COLUMN token_refresh_interval_hours INT NOT NULL DEFAULT 72",
-    "ALTER TABLE accounts ADD COLUMN platform VARCHAR(50) NOT NULL DEFAULT 'gpt'",
-    "ALTER TABLE accounts ADD COLUMN provider_mode ENUM('oauth', 'api') NOT NULL DEFAULT 'oauth'",
-    "ALTER TABLE accounts ADD COLUMN api_base_url VARCHAR(255) NOT NULL DEFAULT ''",
-    "ALTER TABLE accounts ADD COLUMN api_key VARCHAR(255) NOT NULL DEFAULT ''",
-    "ALTER TABLE accounts ADD COLUMN api_model VARCHAR(255) NOT NULL DEFAULT ''",
-    "ALTER TABLE accounts ADD COLUMN api_cli_config TEXT NULL",
+    ['settings', 'auto_token_refresh', "auto_token_refresh INTEGER NOT NULL DEFAULT 1"],
+    ['settings', 'token_refresh_interval_hours', 'token_refresh_interval_hours INTEGER NOT NULL DEFAULT 72'],
+    ['accounts', 'platform', "platform TEXT NOT NULL DEFAULT 'gpt'"],
+    ['accounts', 'provider_mode', "provider_mode TEXT NOT NULL DEFAULT 'oauth'"],
+    ['accounts', 'api_base_url', "api_base_url TEXT NOT NULL DEFAULT ''"],
+    ['accounts', 'api_key', "api_key TEXT NOT NULL DEFAULT ''"],
+    ['accounts', 'api_model', "api_model TEXT NOT NULL DEFAULT ''"],
+    ['accounts', 'api_cli_config', 'api_cli_config TEXT NULL'],
   ];
-  for (const sql of migrations) {
-    try { await pool.query(sql); } catch { /* column already exists, ignore */ }
+
+  for (const [tableName, columnName, definition] of migrations) {
+    await addColumnIfMissing(tableName, columnName, definition);
   }
 }
 
@@ -283,7 +426,7 @@ async function normalizeCliPathsForWindows() {
     `UPDATE settings
      SET codex_path = CASE WHEN codex_path = '/usr/local/bin/codex' THEN '' ELSE codex_path END,
          trae_path = CASE WHEN trae_path = '/usr/local/bin/trae' THEN '' ELSE trae_path END,
-         updated_at = NOW()
+         updated_at = ${nowExpression()}
      WHERE id = 1`,
   );
 }
@@ -295,7 +438,7 @@ export async function initDatabase() {
   await migrateSettings();
   await normalizeCliPathsForWindows();
 
-  if (process.env.NODE_ENV !== 'production') {
+  if (shouldSeedSampleData()) {
     await seedAccounts();
   }
   await seedSettings();
@@ -305,7 +448,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   initDatabase()
     .then(async () => {
       await pool.end();
-      console.log('Database initialized');
+      console.log(`Database initialized (${isSqlite ? 'sqlite' : 'mysql'})`);
     })
     .catch(async (error) => {
       console.error(error);

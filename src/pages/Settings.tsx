@@ -18,6 +18,7 @@ const SettingsPage = () => {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [cliAuth, setCliAuth] = useState<Awaited<ReturnType<typeof api.getCurrentCodexAuth>> | null>(null);
   const [cliManagedStatus, setCliManagedStatus] = useState<Awaited<ReturnType<typeof api.getCodexManagedStatus>> | null>(null);
+  const [saving, setSaving] = useState(false);
   const { t } = useI18n();
 
   useEffect(() => {
@@ -45,9 +46,25 @@ const SettingsPage = () => {
     const nextSettings = { ...settings, ...partial };
     setSettings(nextSettings);
     try {
+      setSaving(true);
       await api.updateSettings(nextSettings);
     } catch (error) {
       toast.error(formatAppError(error, '保存设置失败'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveCurrentSettings = async () => {
+    if (!settings) return;
+    try {
+      setSaving(true);
+      await api.updateSettings(settings);
+      toast.success('设置已保存');
+    } catch (error) {
+      toast.error(formatAppError(error, '保存设置失败'));
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -60,10 +77,38 @@ const SettingsPage = () => {
       <Header activeAccount={currentAccount?.account_id || t('common.none')} mode={settings.mode} onModeChange={(mode) => update({ mode })} />
       <div className="flex-1 flex min-h-0">
         <LeftSidebar currentAccount={currentAccount} accounts={accounts} recentLogs={logs} cliAuth={cliAuth} cliManagedStatus={cliManagedStatus} />
-        <div className="flex-1 overflow-y-auto p-6 max-w-3xl">
-          <h2 className="text-sm font-semibold text-foreground mb-6">{t('settings.title')}</h2>
+        <div className="flex-1 overflow-y-auto p-6">
+          <div className="mb-6 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold text-foreground">{t('settings.title')}</h2>
+              <p className="mt-1 text-xs text-muted-foreground">{t('settings.savedHint')}</p>
+            </div>
+            <Button size="sm" className="h-8 text-xs" onClick={saveCurrentSettings} disabled={saving}>
+              {saving ? t('settings.saving') : t('settings.save')}
+            </Button>
+          </div>
 
-          <section className="space-y-4 mb-8">
+          <section className="mb-8 max-w-4xl space-y-4">
+            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t('settings.cli')}</h3>
+            <div className="space-y-2 rounded-lg border border-border/50 p-4">
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">{t('right.codexPath')}</Label>
+                <Input
+                  value={settings.codex_path ?? ''}
+                  onChange={(e) => update({ codex_path: e.target.value })}
+                  className="h-8 text-xs bg-input border-border/50 font-mono"
+                  placeholder="/opt/homebrew/bin/codex"
+                />
+              </div>
+              <p className="text-[11px] leading-4 text-muted-foreground">{t('settings.cliHint')}</p>
+              <p className="text-[11px] leading-4 text-muted-foreground">{t('right.codexPathHint')}</p>
+              <p className="text-[11px] leading-4 text-muted-foreground">{t('settings.cliExamples')}</p>
+            </div>
+          </section>
+
+          <Separator className="bg-border/50 mb-8" />
+
+          <section className="mb-8 max-w-4xl space-y-4">
             <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t('settings.global')}</h3>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1">
@@ -91,7 +136,7 @@ const SettingsPage = () => {
 
           <Separator className="bg-border/50 mb-8" />
 
-          <section className="space-y-4 mb-8">
+          <section className="mb-8 max-w-4xl space-y-4">
             <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t('settings.notifications')}</h3>
             {['Account errors', 'Rate limits hit', 'Task failures', 'Pool rotation'].map((label) => (
               <div key={label} className="flex items-center justify-between">
@@ -103,7 +148,7 @@ const SettingsPage = () => {
 
           <Separator className="bg-border/50 mb-8" />
 
-          <section className="space-y-3 mb-8">
+          <section className="mb-8 max-w-4xl space-y-3">
             <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t('settings.importExport')}</h3>
             <div className="grid grid-cols-2 gap-2">
               <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => toast.info('Import accounts API not implemented yet')}>Import Accounts (JSON)</Button>
@@ -115,7 +160,7 @@ const SettingsPage = () => {
 
           <Separator className="bg-border/50 mb-8" />
 
-          <section className="space-y-3 rounded-lg border border-destructive/30 p-4">
+          <section className="max-w-4xl space-y-3 rounded-lg border border-destructive/30 p-4">
             <h3 className="text-xs font-semibold text-destructive uppercase tracking-wider">{t('settings.dangerZone')}</h3>
             <div className="flex gap-2 flex-wrap">
               <Button variant="outline" size="sm" className="h-8 text-xs border-destructive/30 text-destructive hover:bg-destructive/10" onClick={() => toast.error('Bulk reset endpoint can be added next')}>Reset All Accounts</Button>

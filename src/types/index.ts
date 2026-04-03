@@ -80,8 +80,8 @@ export interface PoolSettings {
   openclaw_endpoint: string;
   openclaw_api_key: string;
   codex_path: string;
-  trae_path: string;
-  mode: 'codex' | 'trae';
+  claude_path: string;
+  mode: 'codex' | 'claude';
   auto_launch: boolean;
   auto_token_refresh: boolean;
   token_refresh_interval_hours: number;

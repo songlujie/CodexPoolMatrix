@@ -2,17 +2,98 @@
   "name": "codexpoolmatrix",
   "private": true,
   "version": "2.0.0",
+  "description": "Desktop account pool manager for Codex OAuth and API relay accounts.",
+  "main": "electron/main.js",
+  "author": "songlujie",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "build:dev": "vite build --mode development",
+    "icons:build": "node scripts/build-icons.mjs",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
     "server": "node server/index.js",
-    "db:init": "node server/init-db.js"
+    "db:init": "node server/init-db.js",
+    "electron": "electron .",
+    "electron:dev": "node scripts/electron-dev.mjs",
+    "desktop": "npm run build && electron .",
+    "desktop:pack": "npm run icons:build && npm run build && electron-builder --dir",
+    "desktop:pack:all": "node scripts/package-desktop-all.mjs pack",
+    "desktop:pack:win": "node scripts/package-desktop-win.mjs pack",
+    "desktop:dist": "npm run icons:build && npm run build && electron-builder",
+    "desktop:dist:all": "node scripts/package-desktop-all.mjs dist",
+    "desktop:dist:mac": "npm run icons:build && npm run build && electron-builder --mac zip",
+    "desktop:dist:win": "node scripts/package-desktop-win.mjs dist",
+    "desktop:smoke": "node scripts/desktop-smoke.mjs",
+    "desktop:verify": "node scripts/desktop-verify.mjs"
+  },
+  "build": {
+    "appId": "com.codexpoolmatrix.desktop",
+    "productName": "CodexPoolMatrix",
+    "electronDist": "node_modules/electron/dist",
+    "afterSign": "scripts/notarize.mjs",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "asar": true,
+    "icon": "build/icon.png",
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "server/**/*",
+      "package.json",
+      "!server/**/*.test.*",
+      "!server/**/*.spec.*",
+      "!**/*.map"
+    ],
+    "extraMetadata": {
+      "main": "electron/main.js"
+    },
+    "mac": {
+      "icon": "build/icon.png",
+      "category": "public.app-category.developer-tools",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.inherit.plist",
+      "target": [
+        {
+          "target": "dir",
+          "arch": [
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    },
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    }
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -47,11 +128,17 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
+    "cors": "^2.8.5",
     "date-fns": "^3.6.0",
+    "dotenv": "^16.6.1",
     "embla-carousel-react": "^8.6.0",
+    "express": "^4.21.2",
     "framer-motion": "^12.38.0",
+    "http-proxy-agent": "^9.0.0",
+    "https-proxy-agent": "^9.0.0",
     "input-otp": "^1.4.2",
     "lucide-react": "^0.462.0",
+    "mysql2": "^3.14.3",
     "next-themes": "^0.3.0",
     "react": "^18.3.1",
     "react-day-picker": "^8.10.1",
@@ -64,15 +151,12 @@
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",
     "vaul": "^0.9.9",
-    "zod": "^3.25.76",
-    "cors": "^2.8.5",
-    "dotenv": "^16.6.1",
-    "express": "^4.21.2",
-    "mysql2": "^3.14.3"
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@eslint/js": "^9.32.0",
     "@playwright/test": "^1.57.0",
+    "@resvg/resvg-js": "^2.6.2",
     "@tailwindcss/typography": "^0.5.16",
     "@testing-library/jest-dom": "^6.6.0",
     "@testing-library/react": "^16.0.0",
@@ -81,12 +165,13 @@
     "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react-swc": "^3.11.0",
     "autoprefixer": "^10.4.21",
+    "electron": "^41.1.1",
+    "electron-builder": "^26.8.1",
     "eslint": "^9.32.0",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.20",
     "globals": "^15.15.0",
     "jsdom": "^20.0.3",
-
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.8.3",

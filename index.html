@@ -3,6 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; base-uri 'self'; object-src 'none'; script-src 'self' http://localhost:8080 http://127.0.0.1:8080; style-src 'self' 'unsafe-inline' http://localhost:8080 http://127.0.0.1:8080; img-src 'self' data: blob: https: http://localhost:8080 http://127.0.0.1:8080; font-src 'self' data: http://localhost:8080 http://127.0.0.1:8080; connect-src 'self' https: http://localhost:8080 http://127.0.0.1:8080 ws://localhost:8080 ws://127.0.0.1:8080;"
+    />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>CodexPoolMatrix</title>
     <meta name="description" content="CodexPoolMatrix — Multi-account rotation, OAuth management, API relay switching, and OpenClaw sync">

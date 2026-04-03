@@ -1,6 +1,6 @@
 import { Suspense, lazy } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, HashRouter, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -12,6 +12,7 @@ const Index = lazy(() => import("./pages/Index.tsx"));
 const SettingsPage = lazy(() => import("./pages/Settings.tsx"));
 const LogsPage = lazy(() => import("./pages/Logs.tsx"));
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
+const Router = typeof window !== "undefined" && window.codexPoolDesktop?.isElectron ? HashRouter : BrowserRouter;
 
 const RouteFallback = () => (
   <div className="grid min-h-screen place-items-center text-sm text-muted-foreground">
@@ -26,7 +27,7 @@ const App = () => (
         <QueryClientProvider client={queryClient}>
           <TooltipProvider>
             <Sonner />
-            <BrowserRouter>
+            <Router>
               <Suspense fallback={<RouteFallback />}>
                 <Routes>
                   <Route path="/" element={<Index />} />
@@ -35,7 +36,7 @@ const App = () => (
                   <Route path="*" element={<NotFound />} />
                 </Routes>
               </Suspense>
-            </BrowserRouter>
+            </Router>
           </TooltipProvider>
         </QueryClientProvider>
       </I18nProvider>

@@ -61,9 +61,14 @@ const translations = {
   'right.autoTokenRefreshHint': { en: 'Only applies to OAuth accounts. API relay accounts are not refreshed here.', zh: '只对 OAuth 账号生效，API 中转站账号不会在这里刷新。' },
   'right.refreshInterval': { en: 'Refresh interval (hours)', zh: '刷新间隔（小时）' },
   'right.refreshIntervalHint': { en: 'The backend refreshes all OAuth tokens on this schedule.', zh: '后端会按这个间隔批量刷新所有 OAuth 账号的 Token。' },
-  'right.codexConfig': { en: 'Codex Config', zh: 'Codex 配置' },
+  'right.runtimeTarget': { en: 'Current runtime target', zh: '当前运行时目标' },
+  'right.runtimeTarget.codex': { en: 'Codex mode writes to ~/.codex. API accounts take over Codex CLI config and auth. OAuth accounts also switch local auth.json.', zh: 'Codex 模式会写入 ~/.codex。API 账号会接管 Codex CLI 配置和认证；OAuth 账号也会切换本地 auth.json。' },
+  'right.runtimeTarget.claude': { en: 'Claude mode writes to ~/.claude/settings.json. API accounts update ANTHROPIC_* env vars. OAuth accounts do not fully take over Claude local login yet.', zh: 'Claude 模式会写入 ~/.claude/settings.json。API 账号会更新 ANTHROPIC_* 环境变量；OAuth 账号暂时还不能完整接管 Claude 本地登录态。' },
+  'right.cliConfig': { en: 'CLI Config', zh: 'CLI 配置' },
   'right.codexPath': { en: 'Codex executable path', zh: 'Codex 可执行文件路径' },
-  'right.codexPathHint': { en: 'Leave empty to auto-detect from PATH. Set it only when the binary cannot be found.', zh: '留空会自动从 PATH 探测。只有找不到 codex 时才需要手填。' },
+  'right.codexPathHint': { en: 'Leave empty to auto-detect from PATH, Homebrew, fnm, nvm, Volta, and common npm global directories. Fill it manually only if detection still fails.', zh: '留空会自动从 PATH、Homebrew、fnm、nvm、Volta 和常见 npm 全局目录里探测。只有自动探测仍失败时才需要手填。' },
+  'right.claudePath': { en: 'Claude executable path', zh: 'Claude 可执行文件路径' },
+  'right.claudePathHint': { en: 'Reserved for Claude CLI integration. Leave empty unless you need a custom binary path.', zh: '当前主要作为 Claude CLI 预留配置。除非你有自定义安装路径，否则留空即可。' },
   'right.openclawIntegration': { en: 'OpenClaw Integration', zh: 'OpenClaw 集成' },
   'right.openclawOptional': { en: 'Optional integration', zh: '可选集成' },
   'right.openclawHint': { en: 'Only relevant if you use OpenClaw alongside account rotation. Otherwise you can ignore this section.', zh: '只有在你同时使用 OpenClaw 和账号轮换时才有意义；否则可以忽略这块。' },
@@ -123,6 +128,7 @@ const translations = {
   'card.menuRefreshToken': { en: 'Refresh Token', zh: '刷新 Token' },
   'card.menuEditCliConfig': { en: 'Edit CLI Config', zh: '编辑 CLI 配置' },
   'card.menuRemove': { en: 'Remove', zh: '删除' },
+  'card.menuRemoveDisabled': { en: 'In Use', zh: '使用中不可删' },
   'card.refreshTokenSuccess': { en: 'Token refreshed', zh: 'Token 刷新成功' },
   'card.refreshTokenFailed': { en: 'Token refresh failed', zh: 'Token 刷新失败' },
   'card.codexAvailable': { en: 'Codex Available', zh: 'Codex 可用' },
@@ -176,7 +182,7 @@ const translations = {
   'addAccount.apiGroupHint': { en: 'Only used as a grouping label for relay accounts', zh: '仅作为中转站账号的分组标签' },
   'addAccount.apiCategory': { en: 'Category', zh: '分类' },
   'addAccount.apiCliConfig': { en: 'CLI Config Snippet', zh: 'CLI 配置片段' },
-  'addAccount.apiCliConfigHint': { en: 'Provider TOML lines only. base_url is managed separately.', zh: '只填写 provider 内的 TOML 行，base_url 会单独管理。' },
+  'addAccount.apiCliConfigHint': { en: 'Provider TOML lines only. No tables and no duplicate keys. base_url is managed separately.', zh: '只填写 provider 内的 TOML 行；不要写 table，也不要重复 key。base_url 会单独管理。' },
   'addAccount.cancel': { en: 'Cancel', zh: '取消' },
   'addAccount.submit': { en: 'Add Account', zh: '添加账号' },
   'addAccount.submitting': { en: 'Adding...', zh: '添加中...' },
@@ -184,6 +190,12 @@ const translations = {
 
   // ─── Settings page ───
   'settings.title': { en: 'Settings', zh: '设置' },
+  'settings.cli': { en: 'CLI Config', zh: 'CLI 配置' },
+  'settings.cliHint': { en: 'This path is used by the built-in browser login flow. If the desktop app cannot find Codex automatically, paste the absolute path here.', zh: '内置浏览器登录流程会用到这个路径。如果桌面端自动探测不到 Codex，就把终端里查到的绝对路径填在这里。' },
+  'settings.cliExamples': { en: 'Typical macOS path: /opt/homebrew/bin/codex. Typical Windows path: %APPDATA%\\\\npm\\\\codex.cmd', zh: 'macOS 常见路径：/opt/homebrew/bin/codex。Windows 常见路径：%APPDATA%\\\\npm\\\\codex.cmd' },
+  'settings.save': { en: 'Save Settings', zh: '保存设置' },
+  'settings.saving': { en: 'Saving...', zh: '保存中...' },
+  'settings.savedHint': { en: 'Changes are persisted immediately. You can also click Save again after editing the CLI path.', zh: '修改会立即持久化；如果你刚改了 CLI 路径，也可以手动再点一次保存确认。' },
   'settings.global': { en: 'Global Settings', zh: '全局设置' },
   'settings.maxConcurrent': { en: 'Max concurrent tasks', zh: '最大并发任务数' },
   'settings.globalRateLimit': { en: 'Global rate limit (req/min)', zh: '全局速率限制 (请求/分钟)' },
@@ -228,6 +240,7 @@ const translations = {
   'toast.accountPaused': { en: 'Account paused', zh: '账号已暂停' },
   'toast.accountReset': { en: 'Account reset', zh: '账号已重置' },
   'toast.accountRemoved': { en: 'Account removed', zh: '账号已删除' },
+  'toast.accountCurrentCannotDelete': { en: 'Current account cannot be deleted', zh: '当前使用中的账号不能删除' },
   'toast.allCleared': { en: 'All accounts cleared', zh: '已清空所有账号' },
   'toast.noAccountsToClear': { en: 'No accounts to clear', zh: '没有账号可以清空' },
   'toast.confirmClear': { en: 'Are you sure you want to delete all {count} accounts? This cannot be undone.', zh: '确定要删除全部 {count} 个账号吗？此操作不可撤销。' },
@@ -245,12 +258,21 @@ interface I18nContextType {
 
 const I18nContext = createContext<I18nContextType | null>(null);
 
+function getInitialLang(): Lang {
+  const saved = localStorage.getItem('cpm-lang');
+  if (saved === 'en' || saved === 'zh') {
+    return saved;
+  }
+
+  if (navigator.language.startsWith('zh')) {
+    return 'zh';
+  }
+
+  return 'zh';
+}
+
 export function I18nProvider({ children }: { children: ReactNode }) {
-  const [lang, setLang] = useState<Lang>(() => {
-    const saved = localStorage.getItem('cpm-lang');
-    if (saved === 'en' || saved === 'zh') return saved;
-    return navigator.language.startsWith('zh') ? 'zh' : 'en';
-  });
+  const [lang, setLang] = useState<Lang>(getInitialLang);
 
   const handleSetLang = useCallback((newLang: Lang) => {
     setLang(newLang);

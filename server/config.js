@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import fs from 'node:fs';
+import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 
 dotenv.config();
@@ -54,7 +55,12 @@ function applyProxyConfig() {
 
 applyProxyConfig();
 
+const rawSqlitePath = process.env.DB_SQLITE_PATH?.trim();
+const defaultSqlitePath = path.resolve(process.cwd(), '.codexpoolmatrix', 'codexpoolmatrix.sqlite');
+const dbDriver = (process.env.DB_DRIVER || 'sqlite').trim().toLowerCase();
+
 export const config = {
+  host: process.env.HOST || '127.0.0.1',
   port: Number(process.env.PORT || 3001),
   frontendOrigin: process.env.FRONTEND_ORIGIN || 'http://localhost:8080',
   proxy: {
@@ -64,11 +70,13 @@ export const config = {
     noProxy: process.env.NO_PROXY || process.env.no_proxy || '127.0.0.1,localhost,::1',
   },
   db: {
+    driver: dbDriver === 'mysql' ? 'mysql' : 'sqlite',
     host: process.env.DB_HOST || '127.0.0.1',
     port: Number(process.env.DB_PORT || 3306),
     user: process.env.DB_USER || 'root',
     password: process.env.DB_PASSWORD || '',
     database: process.env.DB_NAME || 'codex_pool_manager',
     socketPath,
+    sqlitePath: rawSqlitePath ? path.resolve(rawSqlitePath) : defaultSqlitePath,
   },
 };

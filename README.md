@@ -13,10 +13,12 @@
 - **平台分类** — 支持 GPT、Gemini、Claude 等多平台账号，可自定义添加新平台
 - **OAuth 一键登录 / 扫描导入** — 在界面内直接完成 `codex login` 授权，或批量扫描 auth 文件导入
 - **API 中转站账号** — 支持添加 `Base URL + API Key + 模型名` 的 API 账号，并在切换时接管 Codex CLI 配置
+- **CLI 配置片段自动清洗** — API 中转站的自定义 TOML 片段会自动去掉重复 key、`table` 段和多余 `base_url`
 - **批量用量检测** — 一键检测所有账号状态，OAuth 账号显示 5h / 周用量，API 账号检测中转站与模型可用性
 - **自动轮换** — 按策略选择下一个账号；当当前 OAuth 账号 5h 用量达到 90% 时自动切换
 - **自动 Token 刷新** — 支持按 24h / 48h / 72h / 120h / 168h 周期批量刷新 OAuth 账号 Token
 - **OpenClaw 可选集成** — 切换 OAuth 账号时可同步 `auth-profiles.json` 并触发 OpenClaw 重载
+- **当前账号保护** — 正在使用中的账号不能直接删除，避免误删当前运行时配置
 - **亮暗主题** — 支持深色 / 浅色模式随时切换
 - **紧凑列表视图** — 网格视图和紧凑列表视图自由切换
 - **实时日志** — 完整记录轮换事件、Token 刷新、用量检测
@@ -37,8 +39,9 @@
 
 - **Frontend**: React 18 + TypeScript + Vite 5 + Tailwind CSS + shadcn/ui
 - **State / UX**: TanStack Query + Framer Motion + Sonner
+- **Desktop Shell**: Electron + IPC bridge
 - **Backend**: Node.js + Express 4 + dotenv
-- **Database**: MySQL 8 + mysql2
+- **Database**: SQLite by default, optional MySQL compatibility
 - **Runtime**: Node.js 18+ and npm
 
 ---
@@ -64,22 +67,7 @@ cd CodexPoolMatrix
 npm install
 ```
 
-### 3. Prepare Database
-
-This project currently runs against **MySQL 8**. If you already have a local MySQL instance, you can skip this step and use your own connection info.
-
-Example Docker startup:
-
-```bash
-docker run -d \
-  --name codexpool-mysql \
-  -p 3306:3306 \
-  -e MYSQL_ROOT_PASSWORD=123456 \
-  -e MYSQL_DATABASE=codex_pool_manager \
-  mysql:8.0
-```
-
-### 4. Configure Environment
+### 3. Configure Environment
 
 ```bash
 cp .env.example .env
@@ -95,39 +83,89 @@ HTTP_PROXY=
 HTTPS_PROXY=
 ALL_PROXY=
 NO_PROXY=127.0.0.1,localhost,::1
-DB_HOST=127.0.0.1
-DB_PORT=3306
-DB_SOCKET=
-DB_USER=root
-DB_PASSWORD=123456
-DB_NAME=codex_pool_manager
+DB_DRIVER=sqlite
+DB_SQLITE_PATH=
 VITE_API_BASE_URL=http://localhost:3001
 ```
 
 Notes:
 
-- `DB_SOCKET` 留空时走 TCP 连接
-- 如果你已有自己的 MySQL，请把 `DB_USER / DB_PASSWORD / DB_NAME` 改成你的实际值
+- `DB_DRIVER=sqlite` 时，Electron 桌面版默认把数据库放到系统应用数据目录
+- macOS 默认路径通常是 `~/Library/Application Support/CodexPoolMatrix/codexpoolmatrix.sqlite`
+- Windows 默认路径通常是 `%APPDATA%\CodexPoolMatrix\codexpoolmatrix.sqlite`
+- 桌面版 OAuth 账号目录默认是系统应用数据目录下的 `accounts/`
+- Windows 下通常是 `%APPDATA%\CodexPoolMatrix\accounts\`
+- Codex CLI 配置在 Windows 下默认写入 `%USERPROFILE%\.codex\config.toml` 和 `%USERPROFILE%\.codex\auth.json`
+- 桌面版默认不会注入示例账号；如需开发期假数据，可设置 `DB_SEED_SAMPLE_DATA=1`
+- 如果你仍然想复用 MySQL，把 `DB_DRIVER` 改成 `mysql`，再补齐 `DB_HOST / DB_PORT / DB_USER / DB_PASSWORD / DB_NAME`
 - 如果网络依赖本地代理，填写 `HTTP_PROXY / HTTPS_PROXY`
 
-### 5. Run
+### 4. Run Desktop App
 
 ```bash
-# Terminal 1 — backend
-npm run server
+# Development
+npm run electron:dev
 
-# Terminal 2 — frontend
-npm run dev
+# Rebuild desktop icons
+npm run icons:build
+
+# Production-like desktop run
+npm run build
+npm run electron
+
+# Build unpacked desktop app
+npm run desktop:pack
+
+# Build unpacked macOS + Windows apps together
+npm run desktop:pack:all
+
+# Build unpacked Windows app
+npm run desktop:pack:win
+
+# Build release artifacts
+npm run desktop:dist
+
+# Build macOS + Windows release artifacts together
+npm run desktop:dist:all
+
+# Build Windows installer artifacts
+npm run desktop:dist:win
+
+# Desktop runtime smoke test
+npm run desktop:smoke
+
+# Desktop functional verification
+npm run desktop:verify
 ```
 
-### 6. Open
+开发模式会启动：
 
-- Frontend: [http://localhost:8080](http://localhost:8080)
-- Backend API: [http://localhost:3001](http://localhost:3001)
+- Vite renderer: `http://localhost:8080`
+- Embedded local API: `http://127.0.0.1:3001`
 
-The backend initializes tables automatically on first run.
+Electron 渲染层在桌面模式下通过 IPC 调用本地服务，默认不再依赖额外监听的本地 API 端口。
+`desktop:smoke` 会在不监听 HTTP 端口的情况下直接验证桌面运行时的核心接口。
+`desktop:verify` 会额外覆盖账号、任务、平台、设置等关键增删改查，并在结束后恢复现场。
+`desktop:pack` 会输出当前目标的 unpacked 桌面应用到 `release/`，适合先做本机实机验证。
+`desktop:pack:all` 会在一次流程里同时输出 macOS 和 Windows 的 unpacked 产物到 `release/`。
+`desktop:dist:all` 会额外输出 macOS zip 和 Windows zip；如果环境允许，也会继续生成 Windows `.exe` 安装包。
+`desktop:dist:win` 和 `desktop:pack:win` 现在会优先复用仓库内的 `.electron-dist/win32-x64` 运行时缓存；在 macOS 上也可以直接生成 Windows `x64 zip / exe`。
 
-If you prefer to access the frontend via `127.0.0.1`, update `FRONTEND_ORIGIN` in `.env` to match it.
+桌面图标源文件位于 `build/icon.svg`，可通过 `npm run icons:build` 重新生成 `build/icon.png` 和 `build/icon.ico`。
+
+桌面版首次启动会自动初始化本地数据库。
+Windows 下 OAuth 与 API 中转站依旧会自动写入 `%USERPROFILE%\.codex\config.toml`、`%USERPROFILE%\.codex\auth.json` 与桌面应用数据目录；OpenClaw 自动重载目前只对类 Unix 环境完整支持，Windows 需手动重启 OpenClaw。
+
+### 5. macOS Signing / Notarization
+
+当前仓库已经预留了 Hardened Runtime、entitlements 和 `afterSign` notarization 钩子。
+
+可选配置方式：
+
+- `APPLE_KEYCHAIN_PROFILE`
+- 或同时设置 `APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD`、`APPLE_TEAM_ID`
+
+如果这些环境变量不存在，打包会自动跳过 notarization，不影响本机验证。
 
 ---
 
@@ -159,6 +197,16 @@ If you prefer to access the frontend via `127.0.0.1`, update `FRONTEND_ORIGIN` i
 - API 账号不依赖 `auth.json`
 - API 账号不会参与 OAuth Token 刷新
 - 切换到 API 账号时，后端会改写 Codex CLI 的 provider / model / base_url / api key 配置
+- `CLI Config Snippet` 只写 provider 内的 `key = value`
+- 如果填了重复 key、`[model_providers.custom]` 这类 table，或额外写了 `base_url`，保存时会自动静默清洗
+- 弹窗里的“最终写入预览”显示的是清洗后的结果
+
+### 账号卡片菜单
+
+- **Set Active**：立刻把这个账号切成当前活跃账号，并同步本地运行时
+- **Pause**：取消这个账号的当前活跃状态，并把数据库状态改回 `idle`
+- **Reset**：只重置数据库里的本地状态和计数，不会刷新 Token，也不会重置平台侧真实额度
+- **Remove**：删除账号记录；如果该账号当前正在使用，会被前后端同时拦截，不能直接删
 
 ---
 
@@ -192,7 +240,8 @@ If you prefer to access the frontend via `127.0.0.1`, update `FRONTEND_ORIGIN` i
 ### Codex 配置
 
 - **Codex Path**
-  - 留空时自动从 PATH 探测 `codex`
+  - 留空时会自动从 PATH、Homebrew、fnm、nvm、Volta 和常见 npm 全局目录探测 `codex`
+  - 如果 `which codex` 指向的是 Node 包装脚本，桌面端会自动补齐运行所需 PATH
   - 只有在系统里找不到 `codex` 命令时才需要手动填写
 
 ### OpenClaw 集成
@@ -225,6 +274,7 @@ If you prefer to access the frontend via `127.0.0.1`, update `FRONTEND_ORIGIN` i
 - 自动轮换仅在开启 **自动轮换** 开关时生效
 - 自动 Token 刷新仅对 OAuth 账号生效
 - 未启用 OpenClaw 时，后端会静默跳过相关同步和监控逻辑
+- 当前 UI 主要围绕 Codex 运行时；Claude 相关写入仍属于预留能力，默认不会在主流程里暴露
 
 ---
 
