@@ -17,10 +17,223 @@ export function createAccountsService({
   buildManagedCodexProviderBlock,
   isApiAccount,
   decodeJwtPayload,
+  getCurrentAuth,
+  getSelectedRuntimeMode,
+  readClaudeSettings,
+  readClaudeMatrixState,
+  normalizeClaudeBaseUrl,
 }) {
+  const SAMPLE_ACCOUNT_IDS = new Set(['a26', 'a62', 'a03', 'JERRY', 'b14', 'c88', 'd42', 'e99', 'f17', 'g05']);
+
+  function inferAuthType(planType) {
+    const normalized = String(planType || '').trim().toLowerCase();
+    if (normalized.includes('team')) return 'team';
+    if (normalized.includes('free')) return 'free';
+    return 'plus';
+  }
+
+  function isLikelySeedAccount(row = {}) {
+    const accountId = String(row.account_id || '').trim();
+    const email = String(row.email || '').trim().toLowerCase();
+    const authFilePath = String(row.auth_file_path || '').trim();
+
+    return SAMPLE_ACCOUNT_IDS.has(accountId)
+      && email.endsWith('@codex.team')
+      && /^~\/\.codex\/auth\/.+\.json$/i.test(authFilePath);
+  }
+
+  function findMatchingRuntimeAccount(rows, runtimeAccount) {
+    const runtimeAccountId = String(runtimeAccount.account_id || '').trim();
+    const runtimeEmail = String(runtimeAccount.email || '').trim().toLowerCase();
+    const runtimePath = String(runtimeAccount.auth_file_path || '').trim();
+
+    return rows.find((row) => {
+      const rowAccountId = String(row.account_id || '').trim();
+      const rowEmail = String(row.email || '').trim().toLowerCase();
+      const rowPath = String(row.auth_file_path || '').trim();
+
+      if (runtimeAccount.provider_mode === 'api' && row.provider_mode === 'api' && runtimeAccountId && rowAccountId === runtimeAccountId) {
+        return true;
+      }
+
+      if (runtimeEmail && rowEmail === runtimeEmail) {
+        return true;
+      }
+
+      if (runtimePath && rowPath === runtimePath) {
+        return true;
+      }
+
+      return runtimeAccountId && rowAccountId === runtimeAccountId;
+    });
+  }
+
+  function getClaudeEnv(settings) {
+    return settings?.env && typeof settings.env === 'object' && !Array.isArray(settings.env)
+      ? settings.env
+      : {};
+  }
+
+  function sanitizeAccountName(value) {
+    return String(value || '')
+      .trim()
+      .replace(/\s+/g, '-')
+      .replace(/[^a-zA-Z0-9@._-]+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 120);
+  }
+
+  function buildClaudeLocalAccountSnapshot({ settings, matrixState }) {
+    const env = getClaudeEnv(settings);
+    const apiKey = String(env.ANTHROPIC_AUTH_TOKEN || '').trim();
+    const apiBaseUrl = normalizeClaudeBaseUrl(env.ANTHROPIC_BASE_URL || '');
+    const apiModel = String(env.ANTHROPIC_MODEL || '').trim();
+    const email = String(matrixState?.email || '').trim().toLowerCase();
+    const currentAccountId = String(matrixState?.mode === 'api' ? (matrixState?.account_id || '') : '').trim();
+
+    if (!apiKey) {
+      const error = new Error('未检测到当前 Claude 本机配置中的 ANTHROPIC_AUTH_TOKEN');
+      error.status = 400;
+      throw error;
+    }
+
+    let accountId = sanitizeAccountName(currentAccountId)
+      || sanitizeAccountName(email);
+
+    if (!accountId) {
+      const host = (() => {
+        try {
+          return apiBaseUrl ? new URL(apiBaseUrl).hostname : 'local';
+        } catch {
+          return 'local';
+        }
+      })();
+      accountId = `claude-${sanitizeAccountName(host) || 'local'}`;
+    }
+
+    return {
+      account_id: accountId,
+      email,
+      auth_type: 'plus',
+      auth_file_path: '',
+      provider_mode: 'api',
+      api_base_url: apiBaseUrl,
+      api_key: apiKey,
+      api_model: apiModel,
+      api_cli_config: '',
+      platform: 'claude',
+      source_mode: String(matrixState?.mode || '').trim() || null,
+      source_account_id: String(matrixState?.account_id || '').trim() || null,
+      source_email: email || null,
+    };
+  }
+
+  async function buildRuntimeAccountSnapshot() {
+    const currentAuth = await getCurrentAuth();
+    if (!currentAuth?.found) {
+      return null;
+    }
+
+    const runtimeMode = await getSelectedRuntimeMode();
+    const accountId = String(currentAuth.account_id || currentAuth.email || '').trim();
+    if (!accountId) {
+      return null;
+    }
+
+    return {
+      account_id: accountId,
+      email: String(currentAuth.email || '').trim(),
+      auth_type: inferAuthType(currentAuth.plan_type),
+      auth_file_path: String(currentAuth.path || '').trim(),
+      provider_mode: currentAuth.provider_mode === 'api' ? 'api' : 'oauth',
+      api_base_url: String(currentAuth.api_base_url || '').trim(),
+      api_model: String(currentAuth.api_model || '').trim(),
+      api_cli_config: String(currentAuth.api_cli_config || '').trim(),
+      platform: runtimeMode === 'claude' ? 'claude' : 'gpt',
+      status: 'active',
+    };
+  }
+
+  async function clearSeedDashboardData() {
+    await pool.query('DELETE FROM tasks');
+    await pool.query('DELETE FROM logs');
+    await pool.query('DELETE FROM accounts');
+  }
+
+  async function ensureRuntimeAccountsSynced() {
+    const runtimeAccount = await buildRuntimeAccountSnapshot();
+    const [rows] = await pool.query('SELECT * FROM accounts ORDER BY is_current DESC, account_id ASC');
+
+    if (!runtimeAccount) {
+      if (rows.length > 0 && rows.every(isLikelySeedAccount)) {
+        await clearSeedDashboardData();
+        return [];
+      }
+      return rows;
+    }
+
+    let workingRows = rows;
+    if (workingRows.length > 0 && workingRows.every(isLikelySeedAccount)) {
+      await clearSeedDashboardData();
+      workingRows = [];
+    }
+
+    const matched = findMatchingRuntimeAccount(workingRows, runtimeAccount);
+    await pool.execute('UPDATE accounts SET is_current = FALSE WHERE is_current = TRUE');
+
+    if (matched) {
+      await pool.execute(
+        `UPDATE accounts
+         SET account_id = ?, email = ?, auth_type = ?, auth_file_path = ?, provider_mode = ?,
+             api_base_url = ?, api_model = ?, api_cli_config = ?, platform = ?, status = ?, is_current = TRUE,
+             updated_at = NOW()
+         WHERE id = ?`,
+        [
+          runtimeAccount.account_id,
+          runtimeAccount.email,
+          runtimeAccount.auth_type,
+          runtimeAccount.auth_file_path,
+          runtimeAccount.provider_mode,
+          runtimeAccount.api_base_url,
+          runtimeAccount.api_model,
+          runtimeAccount.api_cli_config,
+          runtimeAccount.platform,
+          runtimeAccount.status,
+          matched.id,
+        ],
+      );
+    } else {
+      const id = crypto.randomUUID();
+      await pool.execute(
+        `INSERT INTO accounts (
+          id, account_id, email, auth_type, auth_file_path, provider_mode, api_base_url, api_key, api_model, api_cli_config, platform, status, is_current,
+          last_login_at, total_tasks_completed, success_rate, session_start_at, total_session_seconds, requests_this_minute, tokens_used_percent,
+          last_request_at, uptime_percent, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?, ?, TRUE, NOW(), 0, 100, NOW(), 0, 0, 0, NOW(), 100, NOW(), NOW())`,
+        [
+          id,
+          runtimeAccount.account_id,
+          runtimeAccount.email,
+          runtimeAccount.auth_type,
+          runtimeAccount.auth_file_path,
+          runtimeAccount.provider_mode,
+          runtimeAccount.api_base_url,
+          runtimeAccount.api_model,
+          runtimeAccount.api_cli_config,
+          runtimeAccount.platform,
+          runtimeAccount.status,
+        ],
+      );
+    }
+
+    const [nextRows] = await pool.query('SELECT * FROM accounts ORDER BY is_current DESC, account_id ASC');
+    return nextRows;
+  }
+
   return {
     async listAccounts() {
-      const [rows] = await pool.query('SELECT * FROM accounts ORDER BY is_current DESC, account_id ASC');
+      const rows = await ensureRuntimeAccountsSynced();
       return rows.map(mapAccount);
     },
 
@@ -130,6 +343,97 @@ export function createAccountsService({
       await createLog({ accountId: id, message: `Account ${body.account_id} added` });
       const [rows] = await pool.execute('SELECT * FROM accounts WHERE id = ?', [id]);
       return mapAccount(rows[0]);
+    },
+
+    async getClaudeLocalConfig() {
+      const settings = await readClaudeSettings();
+      const matrixState = await readClaudeMatrixState();
+      const snapshot = buildClaudeLocalAccountSnapshot({ settings, matrixState });
+      const [rows] = await pool.execute(
+        `SELECT * FROM accounts
+         WHERE provider_mode = 'api' AND platform = 'claude'
+           AND api_key = ? AND api_base_url = ? AND COALESCE(api_model, '') = ?
+         ORDER BY updated_at DESC
+         LIMIT 1`,
+        [snapshot.api_key, snapshot.api_base_url, snapshot.api_model || ''],
+      );
+
+      return {
+        ok: true,
+        found: true,
+        account_id: snapshot.account_id,
+        email: snapshot.email || '',
+        auth_type: snapshot.auth_type,
+        api_base_url: snapshot.api_base_url,
+        api_model: snapshot.api_model,
+        platform: snapshot.platform,
+        source_mode: snapshot.source_mode,
+        source_account_id: snapshot.source_account_id,
+        source_email: snapshot.source_email,
+        already_added: rows.length > 0,
+        existing_account: rows[0] ? mapAccount(rows[0]) : null,
+      };
+    },
+
+    async importClaudeLocalConfig() {
+      const settings = await readClaudeSettings();
+      const matrixState = await readClaudeMatrixState();
+      const snapshot = buildClaudeLocalAccountSnapshot({ settings, matrixState });
+
+      await validateCodexApiConfig(snapshot);
+
+      const [exactRows] = await pool.execute(
+        `SELECT * FROM accounts
+         WHERE provider_mode = 'api' AND platform = 'claude'
+           AND api_key = ? AND api_base_url = ? AND COALESCE(api_model, '') = ?
+         ORDER BY updated_at DESC
+         LIMIT 1`,
+        [snapshot.api_key, snapshot.api_base_url, snapshot.api_model || ''],
+      );
+      if (exactRows.length > 0) {
+        const existing = exactRows[0];
+        await pool.execute(
+          `UPDATE accounts
+           SET account_id = ?, email = ?, auth_type = ?, updated_at = NOW()
+           WHERE id = ?`,
+          [snapshot.account_id, snapshot.email || '', snapshot.auth_type, existing.id],
+        );
+        await createLog({ accountId: existing.id, message: '[Claude] 已识别为已导入的本机配置' });
+        const [rows] = await pool.execute('SELECT * FROM accounts WHERE id = ?', [existing.id]);
+        return { imported: false, account: mapAccount(rows[0]) };
+      }
+
+      const [sameNameRows] = await pool.execute(
+        `SELECT * FROM accounts
+         WHERE provider_mode = 'api' AND platform = 'claude' AND account_id = ?
+         ORDER BY updated_at DESC
+         LIMIT 1`,
+        [snapshot.account_id],
+      );
+      if (sameNameRows.length > 0) {
+        const existing = sameNameRows[0];
+        await pool.execute(
+          `UPDATE accounts
+           SET email = ?, auth_type = ?, api_base_url = ?, api_key = ?, api_model = ?, api_cli_config = ?, updated_at = NOW()
+           WHERE id = ?`,
+          [
+            snapshot.email || '',
+            snapshot.auth_type,
+            snapshot.api_base_url || '',
+            snapshot.api_key,
+            snapshot.api_model || '',
+            snapshot.api_cli_config,
+            existing.id,
+          ],
+        );
+        await createLog({ accountId: existing.id, message: '[Claude] 已更新本机配置导入' });
+        const [rows] = await pool.execute('SELECT * FROM accounts WHERE id = ?', [existing.id]);
+        return { imported: true, account: mapAccount(rows[0]) };
+      }
+
+      const account = await this.createAccount(snapshot);
+      await createLog({ accountId: account.id, message: '[Claude] 已导入当前本机配置' });
+      return { imported: true, account };
     },
 
     async updateApiCliConfig(id, api_cli_config) {

@@ -24,16 +24,13 @@ export function createAccountRuntimeService({
       return;
     }
 
-    await activateOAuthProviderForMode(nextAccount, runtimeMode);
-
-    if (runtimeMode !== 'codex') {
-      await createLog({
-        accountId: nextAccount.id,
-        level: 'warn',
-        message: '[Claude] OAuth 账号目前不会自动导入 Claude CLI 登录态；这里只会清理 Matrix 接管的 API 环境变量。',
-      });
-      return;
+    if (runtimeMode === 'claude') {
+      const error = new Error('Claude 模式当前仅支持 API 中转站账号；OAuth 账号还不能完整接管 Claude 本地登录态');
+      error.status = 400;
+      throw error;
     }
+
+    await activateOAuthProviderForMode(nextAccount, runtimeMode);
 
     try {
       const authFilePath = expandPath(nextAccount.auth_file_path);
@@ -75,14 +72,15 @@ export function createAccountRuntimeService({
   async function fetchUsageForApiAccount(account) {
     const baseUrl = normalizeApiBaseUrl(account.api_base_url);
     const apiKey = String(account.api_key || '').trim();
+    const requiresApiKey = String(account.platform || '').trim().toLowerCase() !== 'claude';
 
     if (!baseUrl) return { ok: false, error: 'api_base_url_missing' };
-    if (!apiKey) return { ok: false, error: 'api_key_missing' };
+    if (requiresApiKey && !apiKey) return { ok: false, error: 'api_key_missing' };
 
     try {
       const resp = await requestJson(buildRelayUrl(baseUrl, 'models'), {
         headers: {
-          Authorization: `Bearer ${apiKey}`,
+          ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
           Accept: 'application/json',
         },
         timeoutMs: 15000,

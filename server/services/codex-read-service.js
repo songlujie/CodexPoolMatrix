@@ -138,11 +138,14 @@ export function createCodexReadService({
         const apiKey = String(env.ANTHROPIC_AUTH_TOKEN || '').trim();
         const apiBaseUrl = normalizeClaudeBaseUrl(env.ANTHROPIC_BASE_URL || '');
         const apiModel = String(env.ANTHROPIC_MODEL || '').trim() || null;
+        const expectedAccountId = isApiAccount(currentAccount) ? currentAccount.account_id : null;
+        const expectsToken = Boolean(String(currentAccount?.api_key || '').trim());
         const managed = matrixState?.mode === 'api'
           ? Boolean(
-            apiKey &&
+            (!expectedAccountId || !matrixState.account_id || matrixState.account_id === expectedAccountId) &&
             (!matrixState.api_base_url || apiBaseUrl === normalizeClaudeBaseUrl(matrixState.api_base_url)) &&
-            (!matrixState.api_model || apiModel === matrixState.api_model),
+            (!matrixState.api_model || apiModel === matrixState.api_model) &&
+            (!expectsToken || apiKey),
           )
           : matrixState?.mode === 'oauth';
 
@@ -156,7 +159,7 @@ export function createCodexReadService({
           cli_model: apiModel || matrixState?.api_model || null,
           matrix_state_mode: matrixState?.mode || null,
           matrix_state_account_id: matrixState?.account_id || null,
-          expected_account_id: isApiAccount(currentAccount) ? currentAccount.account_id : null,
+          expected_account_id: expectedAccountId,
           config_path: claudeSettingsPath,
         };
       }

@@ -65,6 +65,48 @@ export interface LogEntry {
   created_at: string;
 }
 
+export interface ModelCallLog {
+  id: string;
+  timestamp: string | null;
+  session_id: string;
+  session_file: string;
+  turn_id: string | null;
+  turn_index: number | null;
+  model: string | null;
+  model_provider: string | null;
+  display_account_name: string | null;
+  cwd: string | null;
+  phase: string | null;
+  summary: string;
+  input_tokens: number;
+  cached_input_tokens: number;
+  output_tokens: number;
+  reasoning_output_tokens: number;
+  total_tokens: number;
+  cumulative_input_tokens: number;
+  cumulative_cached_input_tokens: number;
+  cumulative_output_tokens: number;
+  cumulative_reasoning_output_tokens: number;
+  cumulative_total_tokens: number;
+  model_context_window: number | null;
+}
+
+export interface ModelCallsResponse {
+  source: 'codex_sessions';
+  generated_at: string;
+  reason: string | null;
+  available_cwds: string[];
+  summary: {
+    total_calls: number;
+    input_tokens: number;
+    cached_input_tokens: number;
+    output_tokens: number;
+    reasoning_output_tokens: number;
+    total_tokens: number;
+  };
+  items: ModelCallLog[];
+}
+
 export interface PoolSettings {
   strategy: PoolStrategy;
   auto_rotation: boolean;
@@ -85,4 +127,5 @@ export interface PoolSettings {
   auto_launch: boolean;
   auto_token_refresh: boolean;
   token_refresh_interval_hours: number;
+  updated_at?: string;
 }

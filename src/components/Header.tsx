@@ -9,6 +9,7 @@ import { useTheme } from '@/lib/theme';
 interface HeaderProps {
   activeAccount: string;
   mode: 'codex' | 'claude';
+  modeChanging?: boolean;
   onModeChange: (mode: 'codex' | 'claude') => void;
 }
 
@@ -56,7 +57,7 @@ function normalizeHex(input: string) {
   return `#${value.toLowerCase()}`;
 }
 
-export function Header({ activeAccount, mode, onModeChange }: HeaderProps) {
+export function Header({ activeAccount, mode, modeChanging = false, onModeChange }: HeaderProps) {
   const [time, setTime] = useState(new Date());
   const [themeDrawerOpen, setThemeDrawerOpen] = useState(false);
   const { lang, setLang, t } = useI18n();
@@ -99,8 +100,25 @@ export function Header({ activeAccount, mode, onModeChange }: HeaderProps) {
           <span className="font-medium text-foreground">{activeAccount}</span>
         </div>
 
-        <div className="flex h-7 items-center rounded-full border border-border/60 bg-secondary/45 px-3 text-xs font-medium text-foreground">
-          Codex
+        <div className="flex items-center rounded-full border border-border/60 bg-secondary/45 p-0.5">
+          <Button
+            variant="ghost"
+            size="sm"
+            className={`h-6 rounded-full px-2.5 text-xs ${mode === 'codex' ? 'bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+            disabled={modeChanging}
+            onClick={() => onModeChange('codex')}
+          >
+            {t('header.mode.codex')}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className={`h-6 rounded-full px-2.5 text-xs ${mode === 'claude' ? 'bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+            disabled={modeChanging}
+            onClick={() => onModeChange('claude')}
+          >
+            {t('header.mode.claude')}
+          </Button>
         </div>
 
         {/* Theme toggle */}

@@ -2,7 +2,7 @@
   "name": "codexpoolmatrix",
   "private": true,
   "version": "2.0.0",
-  "description": "Desktop account pool manager for Codex OAuth and API relay accounts.",
+  "description": "Desktop AI account pool manager with runtime takeover, real dashboard metrics, and model call logs for Codex and Claude workflows.",
   "main": "electron/main.js",
   "author": "songlujie",
   "type": "module",

@@ -1,4 +1,4 @@
-import { Account, LogEntry, PoolSettings, Task } from '@/types';
+import { Account, LogEntry, ModelCallsResponse, PoolSettings, Task } from '@/types';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 const isDesktopRuntime = typeof window !== 'undefined' && Boolean(window.codexPoolDesktop?.isElectron);
@@ -12,10 +12,11 @@ async function desktopRequest<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
-    const payload = response.data && typeof response.data === 'object'
-      ? response.data
+    const payload = response.data && typeof response.data === 'object' && !Array.isArray(response.data)
+      ? response.data as Record<string, unknown>
       : { message: typeof response.data === 'string' ? response.data : 'Request failed' };
-    throw new Error(payload.message || 'Request failed');
+    const message = typeof payload.message === 'string' ? payload.message : 'Request failed';
+    throw new Error(message);
   }
 
   if (response.status === 204) {
@@ -39,8 +40,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
-    const payload = await response.json().catch(() => ({ message: response.statusText }));
-    throw new Error(payload.message || 'Request failed');
+    const payload = await response.json().catch(() => ({ message: response.statusText })) as Record<string, unknown>;
+    const message = typeof payload.message === 'string' ? payload.message : 'Request failed';
+    throw new Error(message);
   }
 
   if (response.status === 204) {
@@ -60,6 +62,25 @@ export const api = {
     api_model?: string;
     api_cli_config?: string;
   }) => request<Account>('/api/accounts', { method: 'POST', body: JSON.stringify(payload) }),
+  getClaudeLocalConfig: () => request<{
+    ok: boolean;
+    found: boolean;
+    account_id: string;
+    email: string;
+    auth_type: 'team' | 'plus' | 'free';
+    api_base_url: string;
+    api_model: string;
+    platform: string;
+    source_mode: string | null;
+    source_account_id: string | null;
+    source_email: string | null;
+    already_added: boolean;
+    existing_account: Account | null;
+  }>('/api/claude/local-config'),
+  importClaudeLocalConfig: () => request<{
+    imported: boolean;
+    account: Account;
+  }>('/api/claude/import-local', { method: 'POST' }),
   updateAccountAction: (id: string, action: 'setActive' | 'pause' | 'reset') => request<Account>(`/api/accounts/${id}`, { method: 'PATCH', body: JSON.stringify({ action }) }),
   updateApiCliConfig: (id: string, api_cli_config: string) => request<Account>(`/api/accounts/${id}/api-cli-config`, {
     method: 'PUT',
@@ -147,6 +168,7 @@ export const api = {
   createTask: (payload: { description: string; priority: Task['priority']; account: string }) => request<Task>('/api/tasks', { method: 'POST', body: JSON.stringify(payload) }),
   batchRetryTasks: (ids: string[]) => request<{ updated: number }>('/api/tasks/batch-retry', { method: 'POST', body: JSON.stringify({ ids }) }),
   batchCancelTasks: (ids: string[]) => request<{ deleted: number }>('/api/tasks/batch-cancel', { method: 'POST', body: JSON.stringify({ ids }) }),
+  clearTasks: () => request<{ deleted: number }>('/api/tasks', { method: 'DELETE' }),
   listLogs: (params?: { level?: string; account?: string; limit?: number }) => {
     const search = new URLSearchParams();
     if (params?.level) search.set('level', params.level);
@@ -154,6 +176,14 @@ export const api = {
     if (params?.limit) search.set('limit', String(params.limit));
     const suffix = search.toString() ? `?${search.toString()}` : '';
     return request<LogEntry[]>(`/api/logs${suffix}`);
+  },
+  listModelCalls: (params?: { limit?: number; days?: number; cwd?: string }) => {
+    const search = new URLSearchParams();
+    if (params?.limit) search.set('limit', String(params.limit));
+    if (params?.days) search.set('days', String(params.days));
+    if (params?.cwd) search.set('cwd', params.cwd);
+    const suffix = search.toString() ? `?${search.toString()}` : '';
+    return request<ModelCallsResponse>(`/api/model-calls${suffix}`);
   },
   clearLogs: () => request<void>('/api/logs', { method: 'DELETE' }),
   getSettings: () => request<PoolSettings>('/api/settings'),

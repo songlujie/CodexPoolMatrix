@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Plus, Search, RefreshCw, CheckSquare, Square, AlertCircle, LogIn, CheckCircle2, XCircle, Loader2, ChevronLeft } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -16,6 +16,7 @@ import { useI18n } from '@/lib/i18n';
 const PLATFORM_LABELS: Record<string, string> = {
   gpt: 'GPT',
   gemini: 'Gemini',
+  claude: 'Claude',
 };
 
 interface AddAccountDialogProps {
@@ -52,6 +53,7 @@ interface LoginStepProps {
 }
 
 function LoginStep({ onBack, onSuccess }: LoginStepProps) {
+  const { t } = useI18n();
   const [status, setStatus] = useState<'idle' | 'running' | 'success' | 'error'>('idle');
   const [message, setMessage] = useState('');
   const [output, setOutput] = useState('');
@@ -97,7 +99,7 @@ function LoginStep({ onBack, onSuccess }: LoginStepProps) {
   const handleStart = async () => {
     try {
       setStatus('running');
-      setMessage('正在启动 codex login…');
+      setMessage(t('addAccount.login.starting'));
       setOutput('');
       await api.startCodexLogin();
       startPolling();
@@ -129,7 +131,7 @@ function LoginStep({ onBack, onSuccess }: LoginStepProps) {
         className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
       >
         <ChevronLeft className="h-3.5 w-3.5" />
-        返回
+        {t('addAccount.back')}
       </button>
 
       {/* Status area */}
@@ -143,15 +145,12 @@ function LoginStep({ onBack, onSuccess }: LoginStepProps) {
           <>
             <LogIn className="h-10 w-10 text-muted-foreground" />
             <div>
-              <p className="text-sm font-semibold">一键登录 OpenAI</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                点击后浏览器会自动打开 OpenAI 授权页面<br />
-                完成授权后 auth 文件会自动保存到本地账号目录
-              </p>
+              <p className="text-sm font-semibold">{t('addAccount.login.title')}</p>
+              <p className="text-xs text-muted-foreground mt-1">{t('addAccount.login.idleHint')}</p>
             </div>
             <Button onClick={handleStart} className="gap-2">
               <LogIn className="h-4 w-4" />
-              打开浏览器登录
+              {t('addAccount.login.openBrowser')}
             </Button>
           </>
         )}
@@ -160,15 +159,12 @@ function LoginStep({ onBack, onSuccess }: LoginStepProps) {
           <>
             <Loader2 className="h-10 w-10 text-primary animate-spin" />
             <div>
-              <p className="text-sm font-semibold text-primary">等待浏览器授权…</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                请在浏览器中完成 OpenAI 账号授权<br />
-                授权完成后这里会自动更新
-              </p>
+              <p className="text-sm font-semibold text-primary">{t('addAccount.login.waiting')}</p>
+              <p className="text-xs text-muted-foreground mt-1">{t('addAccount.login.waitingHint')}</p>
             </div>
             <p className="text-[11px] font-mono text-muted-foreground max-w-full truncate px-2">{message}</p>
             <Button variant="outline" size="sm" onClick={handleCancel} className="text-xs">
-              取消
+              {t('addAccount.cancel')}
             </Button>
           </>
         )}
@@ -177,10 +173,10 @@ function LoginStep({ onBack, onSuccess }: LoginStepProps) {
           <>
             <CheckCircle2 className="h-10 w-10 text-primary" />
             <div>
-              <p className="text-sm font-semibold text-primary">登录成功！</p>
+              <p className="text-sm font-semibold text-primary">{t('addAccount.login.success')}</p>
               <p className="text-xs text-muted-foreground mt-1">{message}</p>
             </div>
-            <p className="text-xs text-muted-foreground">正在刷新账号列表…</p>
+            <p className="text-xs text-muted-foreground">{t('addAccount.login.refreshing')}</p>
           </>
         )}
 
@@ -188,7 +184,7 @@ function LoginStep({ onBack, onSuccess }: LoginStepProps) {
           <>
             <XCircle className="h-10 w-10 text-destructive" />
             <div>
-              <p className="text-sm font-semibold text-destructive">登录失败</p>
+              <p className="text-sm font-semibold text-destructive">{t('addAccount.login.failed')}</p>
               <p className="text-xs text-muted-foreground mt-1">{message}</p>
             </div>
             {output && (
@@ -201,7 +197,7 @@ function LoginStep({ onBack, onSuccess }: LoginStepProps) {
             )}
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={handleStart} className="text-xs gap-1.5">
-                <RefreshCw className="h-3 w-3" /> 重试
+                <RefreshCw className="h-3 w-3" /> {t('addAccount.login.retry')}
               </Button>
             </div>
           </>
@@ -225,7 +221,7 @@ function LoginStep({ onBack, onSuccess }: LoginStepProps) {
 
 export function AddAccountDialog({
   onAccountAdded,
-  platforms = ['gpt', 'gemini'],
+  platforms = ['gpt', 'gemini', 'claude'],
   open,
   onOpenChange,
   hideTrigger = false,
@@ -240,6 +236,10 @@ export function AddAccountDialog({
   const [names, setNames] = useState<Record<string, string>>({});
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [adding, setAdding] = useState(false);
+  const [loadingClaudeLocal, setLoadingClaudeLocal] = useState(false);
+  const [importingClaudeLocal, setImportingClaudeLocal] = useState(false);
+  const [claudeLocalInfo, setClaudeLocalInfo] = useState<Awaited<ReturnType<typeof api.getClaudeLocalConfig>> | null>(null);
+  const [claudeLocalError, setClaudeLocalError] = useState('');
   const [selectedPlatform, setSelectedPlatform] = useState<string>('gpt');
   const [apiForm, setApiForm] = useState({
     account_id: '',
@@ -254,15 +254,55 @@ export function AddAccountDialog({
   const isOpen = open ?? internalOpen;
   const setIsOpen = onOpenChange ?? setInternalOpen;
 
+  const loadClaudeLocalConfig = useCallback(async () => {
+    setLoadingClaudeLocal(true);
+    try {
+      const result = await api.getClaudeLocalConfig();
+      setClaudeLocalInfo(result);
+      setClaudeLocalError('');
+    } catch (e) {
+      setClaudeLocalInfo(null);
+      setClaudeLocalError(formatAppError(e, t('addAccount.error.claudeImportFailed')));
+    } finally {
+      setLoadingClaudeLocal(false);
+    }
+  }, [t]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+    void loadClaudeLocalConfig();
+  }, [isOpen, loadClaudeLocalConfig]);
+
   const handleOpen = () => {
     setView('scan');
     setIsOpen(true);
     handleScan();
   };
 
+  const handleImportClaudeLocal = async () => {
+    setImportingClaudeLocal(true);
+    try {
+      const result = await api.importClaudeLocalConfig();
+      if (result.imported) {
+        toast.success(t('addAccount.toast.claudeImported', { account: result.account.account_id }));
+      } else {
+        toast.info(t('addAccount.toast.claudeAlreadyImported', { account: result.account.account_id }));
+      }
+      onAccountAdded(result.account);
+      setIsOpen(false);
+      await loadClaudeLocalConfig();
+    } catch (e) {
+      toast.error(formatAppError(e, t('addAccount.error.claudeImportFailed')));
+    } finally {
+      setImportingClaudeLocal(false);
+    }
+  };
+
   const handleAddApiAccount = async () => {
     if (!apiForm.account_id.trim() || !apiForm.api_base_url.trim() || !apiForm.api_key.trim()) {
-      toast.error('请填写账号名、中转站地址和 API Key');
+      toast.error(t('addAccount.toast.apiRequired'));
       return;
     }
 
@@ -280,7 +320,7 @@ export function AddAccountDialog({
         api_cli_config: apiForm.api_cli_config,
         platform: selectedPlatform,
       });
-      toast.success(`成功添加 API 账号 ${account.account_id}`);
+      toast.success(t('addAccount.toast.apiAdded', { account: account.account_id }));
       onAccountAdded(account);
       setIsOpen(false);
       setApiForm({
@@ -293,7 +333,7 @@ export function AddAccountDialog({
         api_cli_config: '',
       });
     } catch (e) {
-      toast.error(formatAppError(e, '添加 API 账号失败'));
+      toast.error(formatAppError(e, t('addAccount.error.apiFailed')));
     } finally {
       setAdding(false);
     }
@@ -321,7 +361,7 @@ export function AddAccountDialog({
         setSelected(new Set(fresh.map(f => f.file)));
       }
     } catch (e) {
-      setScanError(formatAppError(e, '扫描账号目录失败'));
+      setScanError(formatAppError(e, t('addAccount.error.scanFailed')));
     } finally {
       setScanning(false);
     }
@@ -363,12 +403,12 @@ export function AddAccountDialog({
         lastAccount = account;
         success++;
       } catch (e) {
-        toast.error(`${f.file}: ${formatAppError(e, '添加账号失败')}`);
+        toast.error(`${f.file}: ${formatAppError(e, t('addAccount.error.addFailed'))}`);
       }
     }
     setAdding(false);
     if (success > 0) {
-      toast.success(`成功添加 ${success} 个账号`);
+      toast.success(t('addAccount.toast.batchAdded', { count: success }));
       onAccountAdded(lastAccount);
       setIsOpen(false);
       setScanned([]);
@@ -393,8 +433,8 @@ export function AddAccountDialog({
       <Dialog open={isOpen} onOpenChange={setIsOpen}>
         <DialogContent className="sm:max-w-[520px] max-w-[95vw] overflow-hidden">
           <DialogHeader>
-          <DialogTitle>{view === 'api' ? '添加 API 中转站账号' : '添加账号'}</DialogTitle>
-        </DialogHeader>
+            <DialogTitle>{view === 'api' ? t('addAccount.apiTitle') : t('addAccount.dialogTitle')}</DialogTitle>
+          </DialogHeader>
 
           {/* ── Login view ── */}
           {view === 'login' && (
@@ -413,6 +453,44 @@ export function AddAccountDialog({
               {/* 一键登录入口 */}
               <div className="grid gap-2">
                 <button
+                  onClick={handleImportClaudeLocal}
+                  disabled={loadingClaudeLocal || importingClaudeLocal || !!claudeLocalError}
+                  className="w-full flex items-center justify-between rounded-lg border border-border/50 bg-secondary/30 hover:bg-secondary/60 disabled:opacity-60 disabled:cursor-not-allowed px-4 py-3 transition-colors group"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="h-8 w-8 rounded-full bg-amber-500/10 flex items-center justify-center group-hover:bg-amber-500/20 transition-colors">
+                      {loadingClaudeLocal || importingClaudeLocal
+                        ? <Loader2 className="h-4 w-4 text-amber-600 animate-spin" />
+                        : <CheckCircle2 className="h-4 w-4 text-amber-600" />}
+                    </div>
+                    <div className="min-w-0 text-left">
+                      <p className="text-sm font-medium">{t('addAccount.claudeLocalEntryTitle')}</p>
+                      <p className="text-[11px] text-muted-foreground">{t('addAccount.claudeLocalEntryHint')}</p>
+                      {claudeLocalInfo && (
+                        <p className="mt-1 truncate text-[10px] text-muted-foreground">
+                          {claudeLocalInfo.account_id}
+                          {claudeLocalInfo.api_base_url ? ` · ${claudeLocalInfo.api_base_url}` : ''}
+                          {claudeLocalInfo.source_mode ? ` · ${t('addAccount.claudeLocalSource')}: ${claudeLocalInfo.source_mode}` : ''}
+                        </p>
+                      )}
+                      {claudeLocalInfo?.already_added && claudeLocalInfo.existing_account && (
+                        <p className="mt-1 truncate text-[10px] text-amber-700 dark:text-amber-400">
+                          {t('addAccount.claudeLocalAlreadyAdded', { account: claudeLocalInfo.existing_account.account_id })}
+                        </p>
+                      )}
+                      {claudeLocalError && (
+                        <p className="mt-1 truncate text-[10px] text-destructive">
+                          {claudeLocalError}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <span className="text-[11px] text-muted-foreground group-hover:text-foreground transition-colors">
+                    {importingClaudeLocal ? t('addAccount.claudeLocalImporting') : '→'}
+                  </span>
+                </button>
+
+                <button
                   onClick={() => setView('login')}
                   className="w-full flex items-center justify-between rounded-lg border border-border/50 bg-secondary/30 hover:bg-secondary/60 px-4 py-3 transition-colors group"
                 >
@@ -421,8 +499,8 @@ export function AddAccountDialog({
                       <LogIn className="h-4 w-4 text-primary" />
                     </div>
                     <div className="text-left">
-                      <p className="text-sm font-medium">一键登录新账号</p>
-                      <p className="text-[11px] text-muted-foreground">浏览器授权，auth 文件自动保存</p>
+                      <p className="text-sm font-medium">{t('addAccount.loginEntryTitle')}</p>
+                      <p className="text-[11px] text-muted-foreground">{t('addAccount.loginEntryHint')}</p>
                     </div>
                   </div>
                   <span className="text-[11px] text-muted-foreground group-hover:text-foreground transition-colors">→</span>
@@ -437,8 +515,8 @@ export function AddAccountDialog({
                       <Plus className="h-4 w-4 text-info" />
                     </div>
                     <div className="text-left">
-                      <p className="text-sm font-medium">添加 API 中转站账号</p>
-                      <p className="text-[11px] text-muted-foreground">填写 Base URL、API Key、模型名</p>
+                      <p className="text-sm font-medium">{t('addAccount.apiEntryTitle')}</p>
+                      <p className="text-[11px] text-muted-foreground">{t('addAccount.apiEntryHint')}</p>
                     </div>
                   </div>
                   <span className="text-[11px] text-muted-foreground group-hover:text-foreground transition-colors">→</span>
@@ -447,19 +525,19 @@ export function AddAccountDialog({
 
               <div className="relative flex items-center gap-3">
                 <div className="flex-1 border-t border-border/40" />
-                <span className="text-[10px] text-muted-foreground uppercase tracking-wider">或手动导入</span>
+                <span className="text-[10px] text-muted-foreground uppercase tracking-wider">{t('addAccount.orManualImport')}</span>
                 <div className="flex-1 border-t border-border/40" />
               </div>
 
               {/* 扫描目录输入 */}
               <div className="space-y-2">
-                <Label className="text-xs text-muted-foreground">Auth 目录</Label>
+                <Label className="text-xs text-muted-foreground">{t('addAccount.authDir')}</Label>
                 <div className="flex gap-2">
                   <Input
                     value={scanDir}
                     onChange={e => setScanDir(e.target.value)}
                     className="flex-1 text-xs font-mono"
-                    placeholder="留空使用默认本地 accounts/ 目录"
+                    placeholder={t('addAccount.authDirPlaceholder')}
                     onKeyDown={e => e.key === 'Enter' && handleScan()}
                   />
                   <Button
@@ -472,7 +550,7 @@ export function AddAccountDialog({
                     {scanning
                       ? <RefreshCw className="h-3.5 w-3.5 animate-spin" />
                       : <Search className="h-3.5 w-3.5" />}
-                    {scanning ? '扫描中' : '扫描'}
+                    {scanning ? t('addAccount.scanning') : t('addAccount.scan')}
                   </Button>
                 </div>
               </div>
@@ -490,7 +568,7 @@ export function AddAccountDialog({
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-muted-foreground">
-                      发现 {scanned.length} 个文件，{addable.length} 个可添加
+                      {t('addAccount.scanSummary', { total: scanned.length, addable: addable.length })}
                     </span>
                     {addable.length > 0 && (
                       <button
@@ -498,8 +576,8 @@ export function AddAccountDialog({
                         className="flex items-center gap-1 text-xs text-primary hover:underline"
                       >
                         {selected.size === addable.length
-                          ? <><CheckSquare className="h-3.5 w-3.5" /> 取消全选</>
-                          : <><Square className="h-3.5 w-3.5" /> 全选</>}
+                          ? <><CheckSquare className="h-3.5 w-3.5" /> {t('addAccount.unselectAll')}</>
+                          : <><Square className="h-3.5 w-3.5" /> {t('addAccount.selectAll')}</>}
                       </button>
                     )}
                   </div>
@@ -532,7 +610,7 @@ export function AddAccountDialog({
                               onChange={e => setNames(prev => ({ ...prev, [f.file]: e.target.value }))}
                               disabled={disabled}
                               className="h-6 text-xs border-0 bg-transparent p-0 focus-visible:ring-0 font-medium"
-                              placeholder="账号名"
+                              placeholder={t('addAccount.name')}
                             />
                             <p className="text-[10px] text-muted-foreground truncate">
                               {f.email || f.file}
@@ -547,11 +625,11 @@ export function AddAccountDialog({
                             )}
                             {f.already_added && (
                               <span className={`text-[9px] ${f.duplicate_reason === '邮箱重复' ? 'text-warning' : 'text-muted-foreground'}`}>
-                                {f.duplicate_reason || '已添加'}
+                                {f.duplicate_reason || t('addAccount.alreadyAdded')}
                               </span>
                             )}
                             {f.error && (
-                              <span className="text-[9px] text-destructive">读取失败</span>
+                              <span className="text-[9px] text-destructive">{t('addAccount.readFailed')}</span>
                             )}
                           </div>
                         </div>
@@ -563,7 +641,7 @@ export function AddAccountDialog({
 
               {/* 平台选择 */}
               <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">平台</Label>
+                <Label className="text-xs text-muted-foreground">{t('addAccount.platform')}</Label>
                 <Select value={selectedPlatform} onValueChange={setSelectedPlatform}>
                   <SelectTrigger className="h-8 text-xs bg-input border-border/50">
                     <SelectValue />
@@ -580,10 +658,10 @@ export function AddAccountDialog({
 
               <DialogFooter>
                 <Button variant="outline" onClick={() => setIsOpen(false)} disabled={adding}>
-                  取消
+                  {t('addAccount.cancel')}
                 </Button>
                 <Button onClick={handleAdd} disabled={adding || selected.size === 0}>
-                  {adding ? `添加中...` : `添加 ${selected.size} 个账号`}
+                  {adding ? t('addAccount.submitting') : t('addAccount.addSelected', { count: selected.size })}
                 </Button>
               </DialogFooter>
             </>
@@ -596,29 +674,29 @@ export function AddAccountDialog({
                 className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
               >
                 <ChevronLeft className="h-3.5 w-3.5" />
-                返回
+                {t('addAccount.back')}
               </button>
 
               <div className="grid gap-3">
                 <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">账号名</Label>
-                  <Input value={apiForm.account_id} onChange={e => setApiForm(prev => ({ ...prev, account_id: e.target.value }))} className="text-xs" placeholder="例如：relay-main" />
+                  <Label className="text-xs text-muted-foreground">{t('addAccount.name')}</Label>
+                  <Input value={apiForm.account_id} onChange={e => setApiForm(prev => ({ ...prev, account_id: e.target.value }))} className="text-xs" placeholder={t('addAccount.apiNamePlaceholder')} />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">邮箱备注</Label>
-                  <Input value={apiForm.email} onChange={e => setApiForm(prev => ({ ...prev, email: e.target.value }))} className="text-xs" placeholder="可选，仅用于标识" />
+                  <Label className="text-xs text-muted-foreground">{t('addAccount.emailNote')}</Label>
+                  <Input value={apiForm.email} onChange={e => setApiForm(prev => ({ ...prev, email: e.target.value }))} className="text-xs" placeholder={t('addAccount.emailNotePlaceholder')} />
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs text-muted-foreground">Base URL</Label>
-                  <Input value={apiForm.api_base_url} onChange={e => setApiForm(prev => ({ ...prev, api_base_url: e.target.value }))} className="text-xs font-mono" placeholder="例如：https://your-relay.example.com/v1" />
+                  <Input value={apiForm.api_base_url} onChange={e => setApiForm(prev => ({ ...prev, api_base_url: e.target.value }))} className="text-xs font-mono" placeholder={t('addAccount.baseUrlPlaceholder')} />
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs text-muted-foreground">API Key</Label>
                   <Input type="password" value={apiForm.api_key} onChange={e => setApiForm(prev => ({ ...prev, api_key: e.target.value }))} className="text-xs font-mono" placeholder="sk-..." />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">模型名</Label>
-                  <Input value={apiForm.api_model} onChange={e => setApiForm(prev => ({ ...prev, api_model: e.target.value }))} className="text-xs font-mono" placeholder="可选，例如：gpt-4.1-mini" />
+                  <Label className="text-xs text-muted-foreground">{t('addAccount.modelName')}</Label>
+                  <Input value={apiForm.api_model} onChange={e => setApiForm(prev => ({ ...prev, api_model: e.target.value }))} className="text-xs font-mono" placeholder={t('addAccount.modelPlaceholder')} />
                 </div>
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between gap-2">
@@ -649,7 +727,7 @@ export function AddAccountDialog({
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs text-muted-foreground">{t('addAccount.apiCategory')}</Label>
-                    <p className="text-[10px] leading-4 text-muted-foreground">用于账号筛选和分组展示</p>
+                    <p className="text-[10px] leading-4 text-muted-foreground">{t('addAccount.apiCategoryHint')}</p>
                     <Select value={selectedPlatform} onValueChange={setSelectedPlatform}>
                       <SelectTrigger className="h-8 text-xs bg-input border-border/50">
                         <SelectValue />
@@ -668,10 +746,10 @@ export function AddAccountDialog({
 
               <DialogFooter>
                 <Button variant="outline" onClick={() => setIsOpen(false)} disabled={adding}>
-                  取消
+                  {t('addAccount.cancel')}
                 </Button>
                 <Button onClick={handleAddApiAccount} disabled={adding}>
-                  {adding ? '添加中...' : '添加 API 账号'}
+                  {adding ? t('addAccount.submitting') : t('addAccount.addApiAccount')}
                 </Button>
               </DialogFooter>
             </div>

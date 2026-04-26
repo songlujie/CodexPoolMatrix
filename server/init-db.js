@@ -11,11 +11,7 @@ function shouldSeedSampleData() {
     return ['1', 'true', 'yes', 'on'].includes(explicit);
   }
 
-  if (process.env.DESKTOP_RUNTIME === '1') {
-    return false;
-  }
-
-  return process.env.NODE_ENV !== 'production';
+  return false;
 }
 
 function nowExpression() {

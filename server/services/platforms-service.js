@@ -6,7 +6,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PLATFORMS_FILE = path.resolve(__dirname, '..', 'platforms.json');
 
-export const DEFAULT_PLATFORMS = ['gpt', 'gemini'];
+export const DEFAULT_PLATFORMS = ['gpt', 'gemini', 'claude'];
 
 function serializePlatforms(platforms) {
   return JSON.stringify(platforms).replace(/","/g, '", "');
@@ -15,7 +15,8 @@ function serializePlatforms(platforms) {
 export async function listPlatforms() {
   try {
     const data = await fs.readFile(PLATFORMS_FILE, 'utf8');
-    return JSON.parse(data);
+    const parsed = JSON.parse(data);
+    return Array.from(new Set([...DEFAULT_PLATFORMS, ...parsed]));
   } catch {
     return [...DEFAULT_PLATFORMS];
   }

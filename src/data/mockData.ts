@@ -18,6 +18,7 @@ export const mockAccounts: Account[] = names.map((name, i) => ({
   email: emails[i],
   auth_type: types[i],
   auth_file_path: `~/.codex/auth/${name.toLowerCase()}.json`,
+  platform: 'gpt',
   status: statuses[i],
   is_current: i === 0,
   last_login_at: hoursAgo(Math.floor(Math.random() * 48)),
@@ -102,4 +103,6 @@ export const defaultSettings: PoolSettings = {
   claude_path: '',
   mode: 'codex',
   auto_launch: false,
+  auto_token_refresh: true,
+  token_refresh_interval_hours: 72,
 };

@@ -1,17 +1,26 @@
 import { pool } from '../db.js';
 import { createLog } from './log-service.js';
 
+function normalizeStoredMode(mode = 'codex') {
+  return mode === 'trae' || mode === 'claude' ? 'claude' : 'codex';
+}
+
+function toStoredMode(mode = 'codex') {
+  return mode === 'claude' ? 'trae' : 'codex';
+}
+
 export async function getSettings() {
   const [rows] = await pool.query('SELECT * FROM settings WHERE id = 1');
   const { id, updated_at, trae_path, ...settings } = rows[0];
   return {
     ...settings,
     claude_path: trae_path || '',
-    mode: 'codex',
+    mode: normalizeStoredMode(settings.mode),
   };
 }
 
 export async function updateSettings(body) {
+  const normalizedMode = normalizeStoredMode(body.mode);
   await pool.execute(
     `UPDATE settings SET
       strategy = ?, auto_rotation = ?, rest_after_tasks = ?, cooldown_minutes = ?,
@@ -37,7 +46,7 @@ export async function updateSettings(body) {
       body.openclaw_api_key,
       body.codex_path,
       body.claude_path ?? '',
-      'codex',
+      toStoredMode(normalizedMode),
       body.auto_launch,
       body.auto_token_refresh ?? true,
       body.token_refresh_interval_hours ?? 72,
@@ -45,5 +54,8 @@ export async function updateSettings(body) {
   );
   await createLog({ level: 'info', message: 'Settings updated' });
 
-  return body;
+  return {
+    ...body,
+    mode: normalizedMode,
+  };
 }

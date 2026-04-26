@@ -291,13 +291,13 @@ export function AccountCard({ account, onSetActive, onPause, onReset, onRemove, 
   const deleteDisabled = account.is_current;
   const handleRefreshToken = async () => {
     try {
-      toast.info(`正在刷新 ${account.account_id} 的 Token...`);
+      toast.info(t('card.refreshTokenInProgress', { account: account.account_id }));
       const result = await api.refreshToken(account.id);
       if (result.ok) {
         toast.success(`${account.account_id} ${t('card.refreshTokenSuccess')}`);
         await fetchAuthInfo();
       } else {
-        toast.error(`刷新失败: ${result.reason}`);
+        toast.error(t('card.refreshTokenReason', { reason: result.reason || t('common.none') }));
       }
     } catch {
       toast.error(t('card.refreshTokenFailed'));
@@ -434,7 +434,7 @@ export function AccountCard({ account, onSetActive, onPause, onReset, onRemove, 
           {/* Actions */}
           <div className="flex items-center gap-1 shrink-0 ml-auto">
             <button
-              onClick={handleRefreshLiveUsage}
+              onClick={() => void handleRefreshLiveUsage()}
               disabled={fetchingLive}
               className="h-6 w-6 flex items-center justify-center rounded hover:bg-secondary/50 text-muted-foreground disabled:opacity-40"
               title={t('card.checkAvailability')}
@@ -617,7 +617,7 @@ export function AccountCard({ account, onSetActive, onPause, onReset, onRemove, 
                 )}
                 {!usageResult && account.is_current && (
                   <button
-                    onClick={handleRefreshLiveUsage}
+                    onClick={() => void handleRefreshLiveUsage()}
                     className="text-[10px] text-primary hover:underline"
                   >
                     {t('card.apiClickToCheck')}
@@ -629,7 +629,7 @@ export function AccountCard({ account, onSetActive, onPause, onReset, onRemove, 
                 <p className="text-[11px] text-muted-foreground">{t('card.noData')}</p>
                 {account.is_current && (
                   <button
-                    onClick={handleRefreshLiveUsage}
+                    onClick={() => void handleRefreshLiveUsage()}
                     className="text-[10px] text-primary hover:underline"
                   >
                     {isApiAccount ? t('card.apiClickToCheck') : t('card.clickToFetch')}
@@ -686,7 +686,7 @@ export function AccountCard({ account, onSetActive, onPause, onReset, onRemove, 
           variant="outline"
           size="sm"
           className="w-full h-7 text-[11px] gap-1.5"
-          onClick={handleRefreshLiveUsage}
+          onClick={() => void handleRefreshLiveUsage()}
           disabled={fetchingLive}
         >
           <Zap className={`h-3 w-3 ${fetchingLive ? 'animate-pulse' : ''}`} />

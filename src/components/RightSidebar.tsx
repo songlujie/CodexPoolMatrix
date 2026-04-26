@@ -4,8 +4,21 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { PoolSettings } from '@/types';
-import { RotateCw, Zap, KeyRound, RefreshCcw } from 'lucide-react';
+import { PauseCircle, RefreshCcw, RotateCw, ShieldCheck, Zap, KeyRound, Loader2 } from 'lucide-react';
 import { useI18n } from '@/lib/i18n';
+
+export type QuickActionKey = 'rotate' | 'pauseAll' | 'pauseFiltered' | 'healthCheck' | 'checkAllUsage' | 'refreshAllTokens' | 'restartOpenClaw';
+
+export interface QuickActionStatus {
+  tone: 'idle' | 'running' | 'success' | 'error';
+  label: string;
+  detail?: string;
+  progress?: {
+    current: number;
+    total: number;
+    success: number;
+  } | null;
+}
 
 interface RightSidebarProps {
   settings: PoolSettings;
@@ -16,10 +29,48 @@ interface RightSidebarProps {
   onRestartOpenClaw?: () => void;
   onRefreshAllTokens?: () => void;
   onCheckAllUsage?: () => void;
+  busyAction?: QuickActionKey | null;
+  actionStatus?: QuickActionStatus | null;
 }
 
-export function RightSidebar({ settings, onSettingsChange, onRotateNow, onPauseAll, onHealthCheck, onRestartOpenClaw, onRefreshAllTokens, onCheckAllUsage }: RightSidebarProps) {
+export function RightSidebar({
+  settings,
+  onSettingsChange,
+  onRotateNow,
+  onPauseAll,
+  onHealthCheck,
+  onRestartOpenClaw,
+  onRefreshAllTokens,
+  onCheckAllUsage,
+  busyAction = null,
+  actionStatus = null,
+}: RightSidebarProps) {
   const { t } = useI18n();
+  const runtimePathLabel = settings.mode === 'claude' ? t('right.claudePath') : t('right.codexPath');
+  const runtimePathHint = settings.mode === 'claude' ? t('right.claudePathHint') : t('right.codexPathHint');
+  const runtimeTargetHint = settings.mode === 'claude' ? t('right.runtimeTarget.claude') : t('right.runtimeTarget.codex');
+  const openClawConfigured = Boolean(settings.openclaw_endpoint?.trim() || settings.openclaw_api_key?.trim() || settings.auto_dispatch);
+  const hasRunningAction = Boolean(busyAction);
+  const resolvedActionStatus = actionStatus ?? {
+    tone: 'idle',
+    label: t('right.actionStatusIdle'),
+    detail: '',
+    progress: null,
+  };
+  const actionToneClass = resolvedActionStatus.tone === 'error'
+    ? 'border-destructive/30 bg-destructive/5'
+    : resolvedActionStatus.tone === 'success'
+      ? 'border-primary/30 bg-primary/5'
+      : resolvedActionStatus.tone === 'running'
+        ? 'border-info/30 bg-info/5'
+        : 'border-border/50 bg-secondary/20';
+  const actionToneTextClass = resolvedActionStatus.tone === 'error'
+    ? 'text-destructive'
+    : resolvedActionStatus.tone === 'success'
+      ? 'text-primary'
+      : resolvedActionStatus.tone === 'running'
+        ? 'text-info'
+        : 'text-muted-foreground';
 
   const update = (partial: Partial<PoolSettings>) => {
     onSettingsChange({ ...settings, ...partial });
@@ -31,24 +82,56 @@ export function RightSidebar({ settings, onSettingsChange, onRotateNow, onPauseA
       {/* 快捷操作 */}
       <div className="p-4 border-b border-border/50 space-y-2">
         <h3 className="text-xs font-semibold text-foreground uppercase tracking-wider mb-3">{t('right.quickActions')}</h3>
-        <Button onClick={onRotateNow} className="w-full h-8 text-xs bg-primary hover:bg-primary/90 text-primary-foreground">
-          <RotateCw className="h-3.5 w-3.5 mr-1.5" />
+        <Button onClick={onRotateNow} disabled={hasRunningAction} className="w-full h-8 text-xs bg-primary hover:bg-primary/90 text-primary-foreground disabled:opacity-70">
+          {busyAction === 'rotate' ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <RotateCw className="h-3.5 w-3.5 mr-1.5" />}
           {t('right.rotateNext')}
         </Button>
 
+        <Button onClick={onPauseAll} disabled={hasRunningAction} variant="outline" className="w-full h-8 text-xs border-destructive/30 text-destructive hover:bg-destructive/10 disabled:opacity-70">
+          {busyAction === 'pauseAll' ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <PauseCircle className="h-3.5 w-3.5 mr-1.5" />}
+          {t('right.pauseAll')}
+        </Button>
+
+        <Button onClick={onHealthCheck} disabled={hasRunningAction} variant="outline" className="w-full h-8 text-xs border-info/30 text-info hover:bg-info/10 disabled:opacity-70">
+          {busyAction === 'healthCheck' ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5 mr-1.5" />}
+          {t('right.healthCheck')}
+        </Button>
+
         {onCheckAllUsage && (
-          <Button onClick={onCheckAllUsage} variant="outline" className="w-full h-8 text-xs border-primary/30 text-primary hover:bg-primary/10">
-            <Zap className="h-3.5 w-3.5 mr-1.5" />
-            检测所有账号用量
+          <Button onClick={onCheckAllUsage} disabled={hasRunningAction} variant="outline" className="w-full h-8 text-xs border-primary/30 text-primary hover:bg-primary/10 disabled:opacity-70">
+            {busyAction === 'checkAllUsage' ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Zap className="h-3.5 w-3.5 mr-1.5" />}
+            {t('right.checkAllUsage')}
           </Button>
         )}
 
         {onRefreshAllTokens && (
-          <Button onClick={onRefreshAllTokens} variant="outline" className="w-full h-8 text-xs border-warning/30 text-warning hover:bg-warning/10">
-            <KeyRound className="h-3.5 w-3.5 mr-1.5" />
+          <Button onClick={onRefreshAllTokens} disabled={hasRunningAction} variant="outline" className="w-full h-8 text-xs border-warning/30 text-warning hover:bg-warning/10 disabled:opacity-70">
+            {busyAction === 'refreshAllTokens' ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <KeyRound className="h-3.5 w-3.5 mr-1.5" />}
             {t('right.refreshAllTokens')}
           </Button>
         )}
+
+        <div className={`rounded-lg border px-3 py-2 ${actionToneClass}`}>
+          <p className="text-[11px] font-medium text-foreground">{t('right.actionStatus')}</p>
+          <p className={`mt-1 text-[11px] font-medium ${actionToneTextClass}`}>
+            {resolvedActionStatus.tone === 'running'
+              ? t('right.actionStatusRunning')
+              : resolvedActionStatus.tone === 'success'
+                ? t('right.actionStatusSuccess')
+                : resolvedActionStatus.tone === 'error'
+                  ? t('right.actionStatusError')
+                  : t('right.actionStatusIdle')}
+          </p>
+          <p className="mt-1 text-[11px] leading-4 text-foreground/85">{resolvedActionStatus.label}</p>
+          {resolvedActionStatus.detail ? (
+            <p className="mt-1 text-[11px] leading-4 text-muted-foreground">{resolvedActionStatus.detail}</p>
+          ) : null}
+          {resolvedActionStatus.progress ? (
+            <p className="mt-1 text-[11px] leading-4 text-muted-foreground">
+              {t('right.actionProgress', resolvedActionStatus.progress)}
+            </p>
+          ) : null}
+        </div>
       </div>
 
       {/* 轮换策略 */}
@@ -121,20 +204,20 @@ export function RightSidebar({ settings, onSettingsChange, onRotateNow, onPauseA
         <div className="rounded-lg border border-border/50 bg-secondary/20 px-3 py-2">
           <p className="text-[11px] font-medium text-foreground">{t('right.runtimeTarget')}</p>
           <p className="mt-1 text-[11px] leading-4 text-muted-foreground">
-            {t('right.runtimeTarget.codex')}
+            {runtimeTargetHint}
           </p>
         </div>
 
         <div className="space-y-1">
-          <Label className="text-[11px] text-muted-foreground">{t('right.codexPath')}</Label>
+          <Label className="text-[11px] text-muted-foreground">{runtimePathLabel}</Label>
           <Input
-            value={settings.codex_path ?? ''}
-            onChange={(e) => update({ codex_path: e.target.value })}
+            value={settings.mode === 'claude' ? (settings.claude_path ?? '') : (settings.codex_path ?? '')}
+            onChange={(e) => update(settings.mode === 'claude' ? { claude_path: e.target.value } : { codex_path: e.target.value })}
             className="h-7 text-xs bg-input border-border/50 font-mono"
-            placeholder="留空自动探测，或填写 codex.cmd / codex.exe"
+            placeholder={settings.mode === 'claude' ? '留空自动探测，或填写 claude.cmd / claude.exe' : '留空自动探测，或填写 codex.cmd / codex.exe'}
           />
           <p className="text-[11px] leading-4 text-muted-foreground">
-            {t('right.codexPathHint')}
+            {runtimePathHint}
           </p>
         </div>
       </div>
@@ -144,11 +227,13 @@ export function RightSidebar({ settings, onSettingsChange, onRotateNow, onPauseA
         <h3 className="text-xs font-semibold text-foreground uppercase tracking-wider">{t('right.openclawIntegration')}</h3>
 
         <div className="flex items-center gap-2 text-xs">
-          <span className="h-2 w-2 rounded-full bg-muted-foreground/50" />
-          <span className="text-muted-foreground">{t('right.openclawOptional')}</span>
+          <span className={`h-2 w-2 rounded-full ${openClawConfigured ? 'bg-primary' : 'bg-muted-foreground/50'}`} />
+          <span className="text-muted-foreground">
+            {openClawConfigured ? t('right.openclawConfigured') : t('right.openclawOptional')}
+          </span>
         </div>
         <p className="text-[11px] leading-4 text-muted-foreground">
-          {t('right.openclawHint')}
+          {openClawConfigured ? t('right.openclawConfiguredHint') : t('right.openclawHint')}
         </p>
 
         <div className="space-y-1">
@@ -189,9 +274,9 @@ export function RightSidebar({ settings, onSettingsChange, onRotateNow, onPauseA
           </details>
         </div>
 
-        {onRestartOpenClaw && (
-          <Button onClick={onRestartOpenClaw} variant="outline" className="w-full h-8 text-xs border-info/30 text-info hover:bg-info/10">
-            <RefreshCcw className="h-3.5 w-3.5 mr-1.5" />
+        {onRestartOpenClaw && openClawConfigured && (
+          <Button onClick={onRestartOpenClaw} disabled={hasRunningAction} variant="outline" className="w-full h-8 text-xs border-info/30 text-info hover:bg-info/10 disabled:opacity-70">
+            {busyAction === 'restartOpenClaw' ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <RefreshCcw className="h-3.5 w-3.5 mr-1.5" />}
             {t('right.reloadOpenClaw')}
           </Button>
         )}

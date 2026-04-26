@@ -71,3 +71,10 @@ export async function batchCancelTasks(ids = []) {
 
   return { deleted: ids.length };
 }
+
+export async function clearTasks() {
+  const [result] = await pool.query('DELETE FROM tasks');
+  const deleted = Number(result?.affectedRows || 0);
+  await createLog({ level: 'warn', message: `Task history cleared (${deleted})` });
+  return { deleted };
+}

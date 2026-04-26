@@ -20,9 +20,10 @@ import { createAccountRuntimeService } from './services/account-runtime-service.
 import { createAuthRuntimeService } from './services/auth-runtime-service.js';
 import { createCodexReadService } from './services/codex-read-service.js';
 import { createLog } from './services/log-service.js';
+import { createModelUsageService } from './services/model-usage-service.js';
 import { addPlatform, listPlatforms, removePlatform } from './services/platforms-service.js';
 import { getSettings, updateSettings } from './services/settings-service.js';
-import { batchCancelTasks, batchRetryTasks, createTask, listTasks } from './services/tasks-service.js';
+import { batchCancelTasks, batchRetryTasks, clearTasks, createTask, listTasks } from './services/tasks-service.js';
 
 // 项目根目录（server/ 的上一层）
 const __filename = fileURLToPath(import.meta.url);
@@ -170,7 +171,8 @@ function buildRelayUrl(baseUrl, resourcePath) {
 }
 
 async function getSelectedRuntimeMode() {
-  return 'codex';
+  const settings = await getSettings();
+  return normalizeRuntimeMode(settings.mode);
 }
 
 const CODEX_HOME_DIR = path.join(os.homedir(), '.codex');
@@ -966,6 +968,12 @@ const codexReadService = createCodexReadService({
   isApiAccount,
 });
 
+const modelUsageService = createModelUsageService({
+  fs,
+  path,
+  os,
+});
+
 const accountsService = createAccountsService({
   fs,
   path,
@@ -983,6 +991,11 @@ const accountsService = createAccountsService({
   buildManagedCodexProviderBlock,
   isApiAccount,
   decodeJwtPayload,
+  getCurrentAuth: () => codexReadService.getCurrentAuth(),
+  getSelectedRuntimeMode,
+  readClaudeSettings,
+  readClaudeMatrixState,
+  normalizeClaudeBaseUrl,
 });
 
 const authRuntimeService = createAuthRuntimeService({
@@ -1054,6 +1067,14 @@ app.get('/api/accounts/scan-dir', asyncHandler(async (req, res) => {
 
 app.post('/api/accounts', asyncHandler(async (req, res) => {
   res.status(201).json(await accountsService.createAccount(req.body));
+}));
+
+app.get('/api/claude/local-config', asyncHandler(async (_req, res) => {
+  res.json(await accountsService.getClaudeLocalConfig());
+}));
+
+app.post('/api/claude/import-local', asyncHandler(async (_req, res) => {
+  res.status(201).json(await accountsService.importClaudeLocalConfig());
 }));
 
 app.patch('/api/accounts/:id', asyncHandler(async (req, res) => {
@@ -1146,6 +1167,10 @@ app.post('/api/tasks/batch-cancel', asyncHandler(async (req, res) => {
   res.json(await batchCancelTasks(req.body?.ids || []));
 }));
 
+app.delete('/api/tasks', asyncHandler(async (_req, res) => {
+  res.json(await clearTasks());
+}));
+
 // ─── Logs（支持 limit 参数） ───
 
 app.get('/api/logs', asyncHandler(async (req, res) => {
@@ -1178,6 +1203,16 @@ app.get('/api/logs', asyncHandler(async (req, res) => {
 
   const [rows] = await pool.query(sql, params);
   res.json(rows);
+}));
+
+app.get('/api/model-calls', asyncHandler(async (req, res) => {
+  const { limit, days, cwd = '' } = req.query;
+  const result = await modelUsageService.listModelCalls({
+    limit,
+    days,
+    cwd,
+  });
+  res.json(result);
 }));
 
 app.delete('/api/logs', asyncHandler(async (_req, res) => {
@@ -1549,103 +1584,8 @@ app.get('/api/auto-refresh/status', (_req, res) => {
   res.json({ running: tokenRefreshTimer !== null, last_refresh: lastTokenRefresh });
 });
 
-// 读取本地 ~/.codex/sessions/ 获取最近的 Codex 用量数据（5h / 周）
 app.get('/api/codex-usage', asyncHandler(async (_req, res) => {
-  const sessionsDir = path.join(os.homedir(), '.codex', 'sessions');
-
-  try {
-    await fs.access(sessionsDir);
-  } catch {
-    return res.json({ found: false, reason: 'sessions_dir_not_found' });
-  }
-
-  // 倒序扫描最近 7 天，找最新的含 rate_limits 的 token_count 事件
-  const now = new Date();
-  let latestEvent = null;
-  let latestTimestamp = null;
-
-  outer:
-  for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
-    const d = new Date(now.getTime() - dayOffset * 86400000);
-    const year = d.getFullYear().toString();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    const dirPath = path.join(sessionsDir, year, month, day);
-
-    try {
-      await fs.access(dirPath);
-    } catch {
-      continue;
-    }
-
-    // 按文件名倒序（最新文件优先）
-    const entries = await fs.readdir(dirPath);
-    const files = entries.filter(f => f.endsWith('.jsonl')).sort().reverse();
-
-    for (const file of files) {
-      const filePath = path.join(dirPath, file);
-      let content;
-      try {
-        content = await fs.readFile(filePath, 'utf8');
-      } catch {
-        continue;
-      }
-      const lines = content.split('\n').filter(Boolean).reverse();
-
-      for (const line of lines) {
-        try {
-          const record = JSON.parse(line);
-          if (
-            record.type === 'event_msg' &&
-            record.payload?.type === 'token_count' &&
-            record.payload?.rate_limits != null
-          ) {
-            const ts = new Date(record.timestamp);
-            if (!latestTimestamp || ts > latestTimestamp) {
-              latestTimestamp = ts;
-              latestEvent = record;
-            }
-            break;
-          }
-        } catch { /* 跳过无效行 */ }
-      }
-
-      if (latestEvent) break outer;
-    }
-  }
-
-  if (!latestEvent) {
-    return res.json({ found: false, reason: 'no_rate_limit_data' });
-  }
-
-  const { primary, secondary } = latestEvent.payload.rate_limits;
-  const recordedAt = latestEvent.timestamp;
-  const recordedAtMs = new Date(recordedAt).getTime();
-
-  const primaryResetsAt = primary?.resets_in_seconds != null
-    ? new Date(recordedAtMs + primary.resets_in_seconds * 1000).toISOString()
-    : null;
-  const secondaryResetsAt = secondary?.resets_in_seconds != null
-    ? new Date(recordedAtMs + secondary.resets_in_seconds * 1000).toISOString()
-    : null;
-
-  const tokenUsage = latestEvent.payload?.info?.total_token_usage ?? null;
-
-  res.json({
-    found: true,
-    recorded_at: recordedAt,
-    primary: primary ? {
-      used_percent: primary.used_percent,
-      window_minutes: primary.window_minutes,
-      resets_at: primaryResetsAt,
-    } : null,
-    secondary: secondary ? {
-      used_percent: secondary.used_percent,
-      window_minutes: secondary.window_minutes,
-      resets_at: secondaryResetsAt,
-    } : null,
-    token_usage: tokenUsage,
-  });
+  res.json(await modelUsageService.getLatestUsageSnapshot());
 }));
 
 if (fsSync.existsSync(FRONTEND_INDEX_PATH)) {

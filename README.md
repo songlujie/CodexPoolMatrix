@@ -4,15 +4,18 @@
 [![Stars](https://img.shields.io/github/stars/songlujie/CodexPoolMatrix?style=flat-square)](https://github.com/songlujie/CodexPoolMatrix/stargazers)
 [![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen?style=flat-square)](https://nodejs.org)
 
-多账号 Codex 管理仪表板，支持 OAuth 账号和 API 中转站账号，提供实时用量检测、自动轮换、批量 Token 刷新，以及可选的 OpenClaw 同步。
+桌面端 AI 账号池与运行时接管面板，统一管理 Codex / Claude / GPT / Gemini 等账号，支持真实仪表盘、模型调用日志、OAuth 与 API 中转账号接管、自动轮换，以及本地桌面打包运行。
 
 ---
 
 ## ✨ Features
 
-- **平台分类** — 支持 GPT、Gemini、Claude 等多平台账号，可自定义添加新平台
+- **多平台账号池** — 支持 Codex、Claude、GPT、Gemini 等多平台账号，可自定义扩展平台
 - **OAuth 一键登录 / 扫描导入** — 在界面内直接完成 `codex login` 授权，或批量扫描 auth 文件导入
-- **API 中转站账号** — 支持添加 `Base URL + API Key + 模型名` 的 API 账号，并在切换时接管 Codex CLI 配置
+- **API 中转站账号** — 支持添加 `Base URL + API Key + 模型名` 的 API 账号，并在切换时接管本地运行时配置
+- **Claude 本地接管** — 支持导入本机 `~/.claude` 配置，并在切换账号或模式时同步 `.claude/settings.json` 与 Matrix 状态
+- **真实仪表盘** — 首页统计、最近操作、账号概览直接读取数据库与运行时真实数据，不再依赖演示假数据
+- **模型调用日志** — 新增独立日志页，记录模型、账号、输入输出 token、总 token、耗时与调用时间
 - **CLI 配置片段自动清洗** — API 中转站的自定义 TOML 片段会自动去掉重复 key、`table` 段和多余 `base_url`
 - **批量用量检测** — 一键检测所有账号状态，OAuth 账号显示 5h / 周用量，API 账号检测中转站与模型可用性
 - **自动轮换** — 按策略选择下一个账号；当当前 OAuth 账号 5h 用量达到 90% 时自动切换
@@ -21,7 +24,7 @@
 - **当前账号保护** — 正在使用中的账号不能直接删除，避免误删当前运行时配置
 - **亮暗主题** — 支持深色 / 浅色模式随时切换
 - **紧凑列表视图** — 网格视图和紧凑列表视图自由切换
-- **实时日志** — 完整记录轮换事件、Token 刷新、用量检测
+- **实时日志** — 完整记录轮换事件、Token 刷新、用量检测与模型调用行为
 
 ## 📸 Screenshots
 
@@ -274,7 +277,7 @@ Windows 下 OAuth 与 API 中转站依旧会自动写入 `%USERPROFILE%\.codex\c
 - 自动轮换仅在开启 **自动轮换** 开关时生效
 - 自动 Token 刷新仅对 OAuth 账号生效
 - 未启用 OpenClaw 时，后端会静默跳过相关同步和监控逻辑
-- 当前 UI 主要围绕 Codex 运行时；Claude 相关写入仍属于预留能力，默认不会在主流程里暴露
+- Claude 模式已支持在桌面端接管本地配置；如果浏览器开发模式与桌面端状态不一致，请以桌面端实际运行结果为准
 
 ---
 
