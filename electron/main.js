@@ -11,6 +11,8 @@ const SERVER_ENTRY_URL = pathToFileURL(path.join(ROOT_DIR, 'server', 'index.js')
 const RENDERER_URL = process.env.ELECTRON_RENDERER_URL || null;
 const FRONTEND_INDEX_PATH = path.join(ROOT_DIR, 'dist', 'index.html');
 const WINDOW_STATE_FILE = 'window-state.json';
+const RELEASES_LATEST_API_URL = 'https://api.github.com/repos/songlujie/CodexPoolMatrix/releases/latest';
+const RELEASES_PAGE_URL = 'https://github.com/songlujie/CodexPoolMatrix/releases/latest';
 const DEFAULT_WINDOW_STATE = {
   width: 1440,
   height: 920,
@@ -18,6 +20,88 @@ const DEFAULT_WINDOW_STATE = {
 
 let mainWindow = null;
 let serverModulePromise = null;
+
+function normalizeVersion(version) {
+  return String(version || '')
+    .trim()
+    .replace(/^v/i, '')
+    .split('-')[0];
+}
+
+function compareVersions(left, right) {
+  const leftParts = normalizeVersion(left)
+    .split('.')
+    .map((part) => Number.parseInt(part, 10) || 0);
+  const rightParts = normalizeVersion(right)
+    .split('.')
+    .map((part) => Number.parseInt(part, 10) || 0);
+  const maxLength = Math.max(leftParts.length, rightParts.length);
+
+  for (let index = 0; index < maxLength; index += 1) {
+    const leftValue = leftParts[index] || 0;
+    const rightValue = rightParts[index] || 0;
+    if (leftValue > rightValue) {
+      return 1;
+    }
+    if (leftValue < rightValue) {
+      return -1;
+    }
+  }
+
+  return 0;
+}
+
+async function fetchLatestRelease() {
+  const response = await fetch(RELEASES_LATEST_API_URL, {
+    headers: {
+      Accept: 'application/vnd.github+json',
+      'User-Agent': 'CodexPoolMatrix',
+    },
+    signal: AbortSignal.timeout(10000),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Latest release request failed: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+async function checkForAppUpdates() {
+  if (!app.isPackaged) {
+    return;
+  }
+
+  try {
+    const release = await fetchLatestRelease();
+    if (!release || release.draft || release.prerelease) {
+      return;
+    }
+
+    const currentVersion = normalizeVersion(app.getVersion());
+    const latestVersion = normalizeVersion(release.tag_name || release.name);
+    if (!latestVersion || compareVersions(latestVersion, currentVersion) <= 0) {
+      return;
+    }
+
+    const result = await dialog.showMessageBox(mainWindow, {
+      type: 'info',
+      buttons: ['下载更新', '稍后再说'],
+      defaultId: 0,
+      cancelId: 1,
+      title: '发现新版本',
+      message: `当前版本 ${currentVersion}，发现新版本 ${latestVersion}`,
+      detail: '是否打开发布页面下载更新？',
+      noLink: true,
+    });
+
+    if (result.response === 0) {
+      await shell.openExternal(release.html_url || RELEASES_PAGE_URL);
+    }
+  } catch (error) {
+    console.warn('[electron] update check failed:', error.message);
+  }
+}
 
 function getWindowStatePath() {
   return path.join(app.getPath('userData'), WINDOW_STATE_FILE);
@@ -198,6 +282,7 @@ app.whenReady().then(async () => {
 
     ipcMain.handle('codexpool:api-request', proxyApiRequest);
     await createMainWindow();
+    void checkForAppUpdates();
   } catch (error) {
     dialog.showErrorBox('CodexPoolMatrix 启动失败', error.message);
     await app.quit();
