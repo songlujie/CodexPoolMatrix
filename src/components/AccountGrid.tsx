@@ -106,6 +106,7 @@ export function AccountGrid({
   const [clearingAll, setClearingAll] = useState(false);
   const [addDialogRequested, setAddDialogRequested] = useState(false);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [editingApiAccount, setEditingApiAccount] = useState<Account | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const { t } = useI18n();
 
@@ -253,6 +254,12 @@ export function AccountGrid({
     setUsageMap(prev => ({ ...prev, [id]: usage }));
   }, []);
 
+  const handleEditApiAccount = useCallback((account: Account) => {
+    setAddDialogRequested(true);
+    setAddDialogOpen(false);
+    setEditingApiAccount(account);
+  }, []);
+
   const handleResetFilters = () => {
     setPlatformFilter(DEFAULT_ACCOUNT_GRID_FILTERS.platformFilter);
     setProviderFilter(DEFAULT_ACCOUNT_GRID_FILTERS.providerFilter);
@@ -308,6 +315,7 @@ export function AccountGrid({
   ];
 
   const handleOpenAddDialog = () => {
+    setEditingApiAccount(null);
     setAddDialogRequested(true);
     setAddDialogOpen(true);
   };
@@ -449,6 +457,7 @@ export function AccountGrid({
               onPause={handlePause}
               onReset={handleReset}
               onRemove={handleRemove}
+              onEditApiAccount={handleEditApiAccount}
               refreshKey={refreshKey}
               viewMode={viewMode}
               externalUsage={usageMap[account.id] ?? null}
@@ -475,6 +484,19 @@ export function AccountGrid({
               onOpenChange={setAddDialogOpen}
               onAccountAdded={onAccountAdded}
               platforms={platforms}
+            />
+            <AddAccountDialog
+              hideTrigger
+              open={Boolean(editingApiAccount)}
+              onOpenChange={(open) => {
+                if (!open) setEditingApiAccount(null);
+              }}
+              onAccountAdded={() => {
+                setEditingApiAccount(null);
+                onAccountAdded();
+              }}
+              platforms={platforms}
+              editingAccount={editingApiAccount}
             />
           </Suspense>
         )}

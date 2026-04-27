@@ -20,6 +20,7 @@ interface AccountCardProps {
   onPause: (id: string) => void;
   onReset: (id: string) => void;
   onRemove: (id: string) => Promise<void>;
+  onEditApiAccount?: (account: Account) => void;
   refreshKey?: number;
   viewMode?: 'grid' | 'list';
   externalUsage?: LiveUsageData | null;
@@ -28,7 +29,7 @@ interface AccountCardProps {
 
 type AuthInfo = Awaited<ReturnType<typeof api.getAccountAuthInfo>>;
 
-export function AccountCard({ account, onSetActive, onPause, onReset, onRemove, refreshKey, viewMode = 'grid', externalUsage, onUsageUpdate }: AccountCardProps) {
+export function AccountCard({ account, onSetActive, onPause, onReset, onRemove, onEditApiAccount, refreshKey, viewMode = 'grid', externalUsage, onUsageUpdate }: AccountCardProps) {
   const sb = statusBadge[account.status];
   const { t, dateLocale } = useI18n();
   const isApiAccount = account.provider_mode === 'api';
@@ -56,6 +57,8 @@ export function AccountCard({ account, onSetActive, onPause, onReset, onRemove, 
   const cliConfigLineCount = cliConfigSummarySource
     ? cliConfigSummarySource.split(/\r?\n/).map(line => line.trim()).filter(Boolean).length
     : 0;
+  const resolvedApiModel = String(authInfo?.api_model || account.api_model || '').trim();
+  const apiModelLabel = resolvedApiModel || t('card.apiModelDefault');
 
   const formatUsageError = useCallback((error?: string) => {
     if (!error) return t('card.checkFailed');
@@ -309,7 +312,10 @@ export function AccountCard({ account, onSetActive, onPause, onReset, onRemove, 
       <DropdownMenuItem onClick={() => onPause(account.id)}>{t('card.menuPause')}</DropdownMenuItem>
       <DropdownMenuItem onClick={() => onReset(account.id)}>{t('card.menuReset')}</DropdownMenuItem>
       {isApiAccount && (
-        <DropdownMenuItem onClick={() => setCliConfigOpen(true)}>{t('card.menuEditCliConfig')}</DropdownMenuItem>
+        <>
+          <DropdownMenuItem onClick={() => onEditApiAccount?.(account)}>{t('card.menuEditApiAccount')}</DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setCliConfigOpen(true)}>{t('card.menuEditCliConfig')}</DropdownMenuItem>
+        </>
       )}
       {!isApiAccount && (
         <DropdownMenuItem onClick={handleRefreshToken} className="text-green-500">{t('card.menuRefreshToken')}</DropdownMenuItem>
@@ -383,7 +389,7 @@ export function AccountCard({ account, onSetActive, onPause, onReset, onRemove, 
               <>
                 <CheckCircle2 className="h-3 w-3 text-primary shrink-0" />
                 <span className="text-[11px] text-muted-foreground truncate">
-                  {authInfo?.api_model || account.api_model || authInfo?.email || account.email || account.account_id}
+                  {apiModelLabel}
                 </span>
               </>
             ) : hasAuthFile ? (
@@ -509,7 +515,7 @@ export function AccountCard({ account, onSetActive, onPause, onReset, onRemove, 
               {t('card.apiBaseUrl')}：{authInfo?.api_base_url || account.api_base_url || t('common.none')}
             </div>
             <div className="text-[10px] text-muted-foreground break-all">
-              {t('card.apiModel')}：{authInfo?.api_model || account.api_model || t('common.none')}
+              {t('card.apiModel')}：{apiModelLabel}
             </div>
             <div className="text-[10px] text-muted-foreground rounded-md border border-border/40 bg-muted/20 px-2 py-1.5">
               {t('card.apiCliConfig')}：{cliConfigLineCount > 0 ? t('card.apiCliConfigSummary', { lines: cliConfigLineCount }) : t('card.apiCliConfigEmpty')}

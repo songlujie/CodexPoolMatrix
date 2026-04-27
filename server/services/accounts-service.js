@@ -345,6 +345,70 @@ export function createAccountsService({
       return mapAccount(rows[0]);
     },
 
+    async updateApiAccount(id, body) {
+      const [targetRows] = await pool.execute('SELECT * FROM accounts WHERE id = ?', [id]);
+      if (!targetRows.length) {
+        const error = new Error('账号不存在');
+        error.status = 404;
+        throw error;
+      }
+
+      const existing = targetRows[0];
+      if (!isApiAccount(existing)) {
+        const error = new Error('仅 API 账号支持编辑');
+        error.status = 400;
+        throw error;
+      }
+
+      const nextApiKey = String(body.api_key || '').trim() || String(existing.api_key || '').trim();
+      const nextAccount = {
+        ...existing,
+        account_id: String(body.account_id || '').trim(),
+        email: String(body.email || '').trim(),
+        auth_type: body.auth_type || existing.auth_type,
+        api_base_url: String(body.api_base_url || '').trim(),
+        api_key: nextApiKey,
+        api_model: String(body.api_model || '').trim(),
+        api_cli_config: validateApiCliConfigSnippet(body.api_cli_config || ''),
+        platform: body.platform || existing.platform || 'gpt',
+      };
+
+      if (!nextAccount.account_id || !nextAccount.api_base_url || !nextAccount.api_key) {
+        const error = new Error('账号名、Base URL、API Key 不能为空');
+        error.status = 400;
+        throw error;
+      }
+
+      await validateCodexApiConfig(nextAccount);
+
+      await pool.execute(
+        `UPDATE accounts
+         SET account_id = ?, email = ?, auth_type = ?, api_base_url = ?, api_key = ?, api_model = ?, api_cli_config = ?, platform = ?, updated_at = NOW()
+         WHERE id = ?`,
+        [
+          nextAccount.account_id,
+          nextAccount.email,
+          nextAccount.auth_type,
+          nextAccount.api_base_url,
+          nextAccount.api_key,
+          nextAccount.api_model,
+          nextAccount.api_cli_config,
+          nextAccount.platform,
+          id,
+        ],
+      );
+
+      if (existing.is_current) {
+        await activateApiProviderForCurrentMode({ ...existing, ...nextAccount, id });
+        await createLog({ accountId: id, message: '[API] 已同步更新中转站账号配置' });
+      } else {
+        await createLog({ accountId: id, message: `[API] 已更新中转站账号 ${nextAccount.account_id}` });
+      }
+
+      const [rows] = await pool.execute('SELECT * FROM accounts WHERE id = ?', [id]);
+      return mapAccount(rows[0]);
+    },
+
     async getClaudeLocalConfig() {
       const settings = await readClaudeSettings();
       const matrixState = await readClaudeMatrixState();

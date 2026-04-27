@@ -25,6 +25,7 @@ interface AddAccountDialogProps {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   hideTrigger?: boolean;
+  editingAccount?: Account | null;
 }
 
 type ScannedFile = {
@@ -225,6 +226,7 @@ export function AddAccountDialog({
   open,
   onOpenChange,
   hideTrigger = false,
+  editingAccount = null,
 }: AddAccountDialogProps) {
   const [internalOpen, setInternalOpen] = useState(false);
   const [view, setView] = useState<'scan' | 'login' | 'api'>('scan');
@@ -253,6 +255,20 @@ export function AddAccountDialog({
   const { t } = useI18n();
   const isOpen = open ?? internalOpen;
   const setIsOpen = onOpenChange ?? setInternalOpen;
+  const isEditingApiAccount = Boolean(editingAccount && editingAccount.provider_mode === 'api');
+
+  const resetApiForm = useCallback(() => {
+    setApiForm({
+      account_id: '',
+      email: '',
+      auth_type: 'plus',
+      api_base_url: '',
+      api_key: '',
+      api_model: '',
+      api_cli_config: '',
+    });
+    setSelectedPlatform('gpt');
+  }, []);
 
   const loadClaudeLocalConfig = useCallback(async () => {
     setLoadingClaudeLocal(true);
@@ -275,7 +291,33 @@ export function AddAccountDialog({
     void loadClaudeLocalConfig();
   }, [isOpen, loadClaudeLocalConfig]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+
+    if (isEditingApiAccount && editingAccount) {
+      setView('api');
+      setSelectedPlatform(editingAccount.platform || 'gpt');
+      setApiForm({
+        account_id: editingAccount.account_id || '',
+        email: editingAccount.email || '',
+        auth_type: editingAccount.auth_type,
+        api_base_url: editingAccount.api_base_url || '',
+        api_key: '',
+        api_model: editingAccount.api_model || '',
+        api_cli_config: editingAccount.api_cli_config || '',
+      });
+      return;
+    }
+
+    resetApiForm();
+  }, [editingAccount, isEditingApiAccount, isOpen, resetApiForm]);
+
   const handleOpen = () => {
+    if (isEditingApiAccount) {
+      setView('api');
+      setIsOpen(true);
+      return;
+    }
     setView('scan');
     setIsOpen(true);
     handleScan();
@@ -301,39 +343,40 @@ export function AddAccountDialog({
   };
 
   const handleAddApiAccount = async () => {
-    if (!apiForm.account_id.trim() || !apiForm.api_base_url.trim() || !apiForm.api_key.trim()) {
+    if (!apiForm.account_id.trim() || !apiForm.api_base_url.trim() || (!isEditingApiAccount && !apiForm.api_key.trim())) {
       toast.error(t('addAccount.toast.apiRequired'));
       return;
     }
 
     setAdding(true);
     try {
-      const account = await api.createAccount({
+      const payload = {
         account_id: apiForm.account_id.trim(),
         email: apiForm.email.trim(),
         auth_type: apiForm.auth_type,
-        auth_file_path: '',
-        provider_mode: 'api',
         api_base_url: apiForm.api_base_url.trim(),
         api_key: apiForm.api_key.trim(),
         api_model: apiForm.api_model.trim(),
         api_cli_config: apiForm.api_cli_config,
         platform: selectedPlatform,
-      });
-      toast.success(t('addAccount.toast.apiAdded', { account: account.account_id }));
+      };
+      const account = isEditingApiAccount && editingAccount
+        ? await api.updateApiAccount(editingAccount.id, payload)
+        : await api.createAccount({
+            ...payload,
+            auth_file_path: '',
+            provider_mode: 'api',
+          });
+      toast.success(
+        isEditingApiAccount
+          ? t('addAccount.toast.apiUpdated', { account: account.account_id })
+          : t('addAccount.toast.apiAdded', { account: account.account_id }),
+      );
       onAccountAdded(account);
       setIsOpen(false);
-      setApiForm({
-        account_id: '',
-        email: '',
-        auth_type: 'plus',
-        api_base_url: '',
-        api_key: '',
-        api_model: '',
-        api_cli_config: '',
-      });
+      resetApiForm();
     } catch (e) {
-      toast.error(formatAppError(e, t('addAccount.error.apiFailed')));
+      toast.error(formatAppError(e, isEditingApiAccount ? t('addAccount.error.apiUpdateFailed') : t('addAccount.error.apiFailed')));
     } finally {
       setAdding(false);
     }
@@ -433,7 +476,7 @@ export function AddAccountDialog({
       <Dialog open={isOpen} onOpenChange={setIsOpen}>
         <DialogContent className="sm:max-w-[520px] max-w-[95vw] overflow-hidden">
           <DialogHeader>
-            <DialogTitle>{view === 'api' ? t('addAccount.apiTitle') : t('addAccount.dialogTitle')}</DialogTitle>
+            <DialogTitle>{view === 'api' ? (isEditingApiAccount ? t('addAccount.apiEditTitle') : t('addAccount.apiTitle')) : t('addAccount.dialogTitle')}</DialogTitle>
           </DialogHeader>
 
           {/* ── Login view ── */}
@@ -670,7 +713,13 @@ export function AddAccountDialog({
           {view === 'api' && (
             <div className="space-y-4">
               <button
-                onClick={() => setView('scan')}
+                onClick={() => {
+                  if (isEditingApiAccount) {
+                    setIsOpen(false);
+                    return;
+                  }
+                  setView('scan');
+                }}
                 className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
               >
                 <ChevronLeft className="h-3.5 w-3.5" />
@@ -692,7 +741,13 @@ export function AddAccountDialog({
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs text-muted-foreground">API Key</Label>
-                  <Input type="password" value={apiForm.api_key} onChange={e => setApiForm(prev => ({ ...prev, api_key: e.target.value }))} className="text-xs font-mono" placeholder="sk-..." />
+                  <Input
+                    type="password"
+                    value={apiForm.api_key}
+                    onChange={e => setApiForm(prev => ({ ...prev, api_key: e.target.value }))}
+                    className="text-xs font-mono"
+                    placeholder={isEditingApiAccount ? t('addAccount.apiKeyKeepPlaceholder') : 'sk-...'}
+                  />
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs text-muted-foreground">{t('addAccount.modelName')}</Label>
@@ -749,7 +804,7 @@ export function AddAccountDialog({
                   {t('addAccount.cancel')}
                 </Button>
                 <Button onClick={handleAddApiAccount} disabled={adding}>
-                  {adding ? t('addAccount.submitting') : t('addAccount.addApiAccount')}
+                  {adding ? t('addAccount.submitting') : (isEditingApiAccount ? t('addAccount.saveApiAccount') : t('addAccount.addApiAccount'))}
                 </Button>
               </DialogFooter>
             </div>

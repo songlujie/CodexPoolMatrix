@@ -1069,6 +1069,10 @@ app.post('/api/accounts', asyncHandler(async (req, res) => {
   res.status(201).json(await accountsService.createAccount(req.body));
 }));
 
+app.put('/api/accounts/:id', asyncHandler(async (req, res) => {
+  res.json(await accountsService.updateApiAccount(req.params.id, req.body));
+}));
+
 app.get('/api/claude/local-config', asyncHandler(async (_req, res) => {
   res.json(await accountsService.getClaudeLocalConfig());
 }));

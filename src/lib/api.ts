@@ -62,6 +62,13 @@ export const api = {
     api_model?: string;
     api_cli_config?: string;
   }) => request<Account>('/api/accounts', { method: 'POST', body: JSON.stringify(payload) }),
+  updateApiAccount: (id: string, payload: Pick<Account, 'account_id' | 'email' | 'auth_type'> & {
+    platform?: string;
+    api_base_url?: string;
+    api_key?: string;
+    api_model?: string;
+    api_cli_config?: string;
+  }) => request<Account>(`/api/accounts/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
   getClaudeLocalConfig: () => request<{
     ok: boolean;
     found: boolean;
