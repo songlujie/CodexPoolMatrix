@@ -10,6 +10,10 @@ import { useI18n } from '@/lib/i18n';
 import { useRuntimeShell } from '@/hooks/use-runtime-shell';
 import { AppShellContext } from '@/components/app-shell-context';
 
+function accountMatchesMode(account: { platform: string }, mode: 'codex' | 'claude') {
+  return mode === 'claude' ? account.platform === 'claude' : account.platform !== 'claude';
+}
+
 export function AppShellLayout() {
   const shell = useRuntimeShell({ pollIntervalMs: 30_000 });
   const queryClient = useQueryClient();
@@ -21,7 +25,6 @@ export function AppShellLayout() {
       return;
     }
 
-    const currentAccount = shell.currentAccount;
     const modeLabel = mode === 'claude' ? t('header.mode.claude') : t('header.mode.codex');
     if (shell.settings.mode === mode) {
       toast.info(t('toast.modeAlreadyActive', { mode: modeLabel }));
@@ -32,39 +35,27 @@ export function AppShellLayout() {
     setModeChanging(true);
 
     try {
-      if (mode === 'claude' && shell.currentAccount?.provider_mode !== 'api') {
-        const fallbackApiAccount = shell.accounts.find((account) => account.provider_mode === 'api');
-        if (!fallbackApiAccount) {
-          toast.dismiss(loadingToastId);
-          toast.error(t('toast.claudeModeNeedsApiAccount'));
-          return;
-        }
-
-        const ok = await shell.updateMode(mode);
-        if (!ok) {
-          toast.dismiss(loadingToastId);
-          return;
-        }
-        await api.updateAccountAction(fallbackApiAccount.id, 'setActive');
-        await shell.refreshShell();
-        toast.dismiss(loadingToastId);
-        toast.info(t('toast.claudeModeAutoSwitched', { account: fallbackApiAccount.account_id }));
-        toast.success(t('toast.modeSwitched', { mode: modeLabel }));
-        await Promise.all([
-          queryClient.invalidateQueries({ queryKey: ['model-calls'] }),
-          queryClient.invalidateQueries({ queryKey: ['tasks'] }),
-        ]);
-        return;
-      }
-
       const ok = await shell.updateMode(mode);
       if (!ok) {
         toast.dismiss(loadingToastId);
         return;
       }
 
-      if (currentAccount) {
-        await api.updateAccountAction(currentAccount.id, 'setActive');
+      const refreshedAccounts = await api.listAccounts();
+      const currentModeAccount = refreshedAccounts.find((account) => account.is_current && accountMatchesMode(account, mode));
+
+      if (mode === 'claude' && !currentModeAccount) {
+        const fallbackApiAccount = refreshedAccounts.find((account) => accountMatchesMode(account, 'claude') && account.provider_mode === 'api');
+        if (!fallbackApiAccount) {
+          toast.dismiss(loadingToastId);
+          toast.error(t('toast.claudeModeNeedsApiAccount'));
+          return;
+        }
+
+        await api.updateAccountAction(fallbackApiAccount.id, 'setActive');
+        await shell.refreshShell();
+        toast.info(t('toast.claudeModeAutoSwitched', { account: fallbackApiAccount.account_id }));
+      } else {
         await shell.refreshShell();
       }
 

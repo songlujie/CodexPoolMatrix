@@ -104,6 +104,8 @@ export const defaultSettings = {
   codex_path: '',
   claude_path: '',
   mode: 'codex',
+  current_codex_account_id: null,
+  current_claude_account_id: null,
   auto_launch: false,
   auto_token_refresh: true,
   token_refresh_interval_hours: 72,

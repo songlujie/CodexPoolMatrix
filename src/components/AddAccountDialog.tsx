@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Plus, Search, RefreshCw, CheckSquare, Square, AlertCircle, LogIn, CheckCircle2, XCircle, Loader2, ChevronLeft } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -22,6 +22,7 @@ const PLATFORM_LABELS: Record<string, string> = {
 interface AddAccountDialogProps {
   onAccountAdded: (account?: Account) => void;
   platforms?: string[];
+  runtimeMode: 'codex' | 'claude';
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   hideTrigger?: boolean;
@@ -39,6 +40,13 @@ type ScannedFile = {
   duplicate_reason?: string | null;
   error?: string;
 };
+
+function maskApiKeyPreview(value = '') {
+  const trimmed = String(value || '').trim();
+  if (!trimmed) return '';
+  if (trimmed.length <= 8) return `${trimmed.slice(0, 2)}***${trimmed.slice(-2)}`;
+  return `${trimmed.slice(0, 4)}***${trimmed.slice(-4)}`;
+}
 
 const TYPE_BADGE: Record<string, string> = {
   team: 'bg-info/15 text-info border-info/30',
@@ -223,11 +231,19 @@ function LoginStep({ onBack, onSuccess }: LoginStepProps) {
 export function AddAccountDialog({
   onAccountAdded,
   platforms = ['gpt', 'gemini', 'claude'],
+  runtimeMode,
   open,
   onOpenChange,
   hideTrigger = false,
   editingAccount = null,
 }: AddAccountDialogProps) {
+  const modePlatforms = useMemo(
+    () => (runtimeMode === 'claude'
+      ? ['claude']
+      : platforms.filter((platform) => platform !== 'claude')),
+    [platforms, runtimeMode],
+  );
+  const defaultPlatform = modePlatforms[0] || (runtimeMode === 'claude' ? 'claude' : 'gpt');
   const [internalOpen, setInternalOpen] = useState(false);
   const [view, setView] = useState<'scan' | 'login' | 'api'>('scan');
   const [scanDir, setScanDir] = useState('');
@@ -242,7 +258,7 @@ export function AddAccountDialog({
   const [importingClaudeLocal, setImportingClaudeLocal] = useState(false);
   const [claudeLocalInfo, setClaudeLocalInfo] = useState<Awaited<ReturnType<typeof api.getClaudeLocalConfig>> | null>(null);
   const [claudeLocalError, setClaudeLocalError] = useState('');
-  const [selectedPlatform, setSelectedPlatform] = useState<string>('gpt');
+  const [selectedPlatform, setSelectedPlatform] = useState<string>(defaultPlatform);
   const [apiForm, setApiForm] = useState({
     account_id: '',
     email: '',
@@ -256,6 +272,7 @@ export function AddAccountDialog({
   const isOpen = open ?? internalOpen;
   const setIsOpen = onOpenChange ?? setInternalOpen;
   const isEditingApiAccount = Boolean(editingAccount && editingAccount.provider_mode === 'api');
+  const savedApiKeyPreview = isEditingApiAccount ? maskApiKeyPreview((editingAccount as Account & { api_key?: string | null })?.api_key || '') : '';
 
   const resetApiForm = useCallback(() => {
     setApiForm({
@@ -267,8 +284,8 @@ export function AddAccountDialog({
       api_model: '',
       api_cli_config: '',
     });
-    setSelectedPlatform('gpt');
-  }, []);
+    setSelectedPlatform(defaultPlatform);
+  }, [defaultPlatform]);
 
   const loadClaudeLocalConfig = useCallback(async () => {
     setLoadingClaudeLocal(true);
@@ -288,15 +305,18 @@ export function AddAccountDialog({
     if (!isOpen) {
       return;
     }
+    if (isEditingApiAccount) {
+      return;
+    }
     void loadClaudeLocalConfig();
-  }, [isOpen, loadClaudeLocalConfig]);
+  }, [isEditingApiAccount, isOpen, loadClaudeLocalConfig]);
 
   useEffect(() => {
     if (!isOpen) return;
 
     if (isEditingApiAccount && editingAccount) {
       setView('api');
-      setSelectedPlatform(editingAccount.platform || 'gpt');
+      setSelectedPlatform(modePlatforms.includes(editingAccount.platform || '') ? editingAccount.platform : defaultPlatform);
       setApiForm({
         account_id: editingAccount.account_id || '',
         email: editingAccount.email || '',
@@ -310,7 +330,13 @@ export function AddAccountDialog({
     }
 
     resetApiForm();
-  }, [editingAccount, isEditingApiAccount, isOpen, resetApiForm]);
+  }, [defaultPlatform, editingAccount, isEditingApiAccount, isOpen, modePlatforms, resetApiForm]);
+
+  useEffect(() => {
+    if (!modePlatforms.includes(selectedPlatform)) {
+      setSelectedPlatform(defaultPlatform);
+    }
+  }, [defaultPlatform, modePlatforms, selectedPlatform]);
 
   const handleOpen = () => {
     if (isEditingApiAccount) {
@@ -474,25 +500,26 @@ export function AddAccountDialog({
       )}
 
       <Dialog open={isOpen} onOpenChange={setIsOpen}>
-        <DialogContent className="sm:max-w-[520px] max-w-[95vw] overflow-hidden">
+        <DialogContent className="flex max-h-[88vh] max-w-[95vw] flex-col overflow-hidden sm:max-w-[520px]">
           <DialogHeader>
             <DialogTitle>{view === 'api' ? (isEditingApiAccount ? t('addAccount.apiEditTitle') : t('addAccount.apiTitle')) : t('addAccount.dialogTitle')}</DialogTitle>
           </DialogHeader>
 
-          {/* ── Login view ── */}
-          {view === 'login' && (
-            <LoginStep
-              onBack={() => setView('scan')}
-              onSuccess={() => {
-                setView('scan');
-                handleScan();
-              }}
-            />
-          )}
+          <div className="flex-1 overflow-y-auto pr-1">
+            {/* ── Login view ── */}
+            {view === 'login' && (
+              <LoginStep
+                onBack={() => setView('scan')}
+                onSuccess={() => {
+                  setView('scan');
+                  handleScan();
+                }}
+              />
+            )}
 
-          {/* ── Scan view ── */}
-          {view === 'scan' && (
-            <>
+            {/* ── Scan view ── */}
+            {view === 'scan' && (
+              <>
               {/* 一键登录入口 */}
               <div className="grid gap-2">
                 <button
@@ -533,21 +560,23 @@ export function AddAccountDialog({
                   </span>
                 </button>
 
-                <button
-                  onClick={() => setView('login')}
-                  className="w-full flex items-center justify-between rounded-lg border border-border/50 bg-secondary/30 hover:bg-secondary/60 px-4 py-3 transition-colors group"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
-                      <LogIn className="h-4 w-4 text-primary" />
+                {runtimeMode === 'codex' ? (
+                  <button
+                    onClick={() => setView('login')}
+                    className="w-full flex items-center justify-between rounded-lg border border-border/50 bg-secondary/30 hover:bg-secondary/60 px-4 py-3 transition-colors group"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
+                        <LogIn className="h-4 w-4 text-primary" />
+                      </div>
+                      <div className="text-left">
+                        <p className="text-sm font-medium">{t('addAccount.loginEntryTitle')}</p>
+                        <p className="text-[11px] text-muted-foreground">{t('addAccount.loginEntryHint')}</p>
+                      </div>
                     </div>
-                    <div className="text-left">
-                      <p className="text-sm font-medium">{t('addAccount.loginEntryTitle')}</p>
-                      <p className="text-[11px] text-muted-foreground">{t('addAccount.loginEntryHint')}</p>
-                    </div>
-                  </div>
-                  <span className="text-[11px] text-muted-foreground group-hover:text-foreground transition-colors">→</span>
-                </button>
+                    <span className="text-[11px] text-muted-foreground group-hover:text-foreground transition-colors">→</span>
+                  </button>
+                ) : null}
 
                 <button
                   onClick={() => setView('api')}
@@ -566,40 +595,44 @@ export function AddAccountDialog({
                 </button>
               </div>
 
-              <div className="relative flex items-center gap-3">
-                <div className="flex-1 border-t border-border/40" />
-                <span className="text-[10px] text-muted-foreground uppercase tracking-wider">{t('addAccount.orManualImport')}</span>
-                <div className="flex-1 border-t border-border/40" />
-              </div>
+              {runtimeMode === 'codex' ? (
+                <div className="relative flex items-center gap-3">
+                  <div className="flex-1 border-t border-border/40" />
+                  <span className="text-[10px] text-muted-foreground uppercase tracking-wider">{t('addAccount.orManualImport')}</span>
+                  <div className="flex-1 border-t border-border/40" />
+                </div>
+              ) : null}
 
               {/* 扫描目录输入 */}
-              <div className="space-y-2">
-                <Label className="text-xs text-muted-foreground">{t('addAccount.authDir')}</Label>
-                <div className="flex gap-2">
-                  <Input
-                    value={scanDir}
-                    onChange={e => setScanDir(e.target.value)}
-                    className="flex-1 text-xs font-mono"
-                    placeholder={t('addAccount.authDirPlaceholder')}
-                    onKeyDown={e => e.key === 'Enter' && handleScan()}
-                  />
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleScan()}
-                    disabled={scanning}
-                    className="gap-1.5"
-                  >
-                    {scanning
-                      ? <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                      : <Search className="h-3.5 w-3.5" />}
-                    {scanning ? t('addAccount.scanning') : t('addAccount.scan')}
-                  </Button>
+              {runtimeMode === 'codex' ? (
+                <div className="space-y-2">
+                  <Label className="text-xs text-muted-foreground">{t('addAccount.authDir')}</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      value={scanDir}
+                      onChange={e => setScanDir(e.target.value)}
+                      className="flex-1 text-xs font-mono"
+                      placeholder={t('addAccount.authDirPlaceholder')}
+                      onKeyDown={e => e.key === 'Enter' && handleScan()}
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleScan()}
+                      disabled={scanning}
+                      className="gap-1.5"
+                    >
+                      {scanning
+                        ? <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                        : <Search className="h-3.5 w-3.5" />}
+                      {scanning ? t('addAccount.scanning') : t('addAccount.scan')}
+                    </Button>
+                  </div>
                 </div>
-              </div>
+              ) : null}
 
               {/* 错误提示 */}
-              {scanError && (
+              {runtimeMode === 'codex' && scanError && (
                 <div className="flex items-center gap-2 text-xs text-destructive bg-destructive/10 rounded-lg px-3 py-2">
                   <AlertCircle className="h-3.5 w-3.5 shrink-0" />
                   {scanError}
@@ -607,7 +640,7 @@ export function AddAccountDialog({
               )}
 
               {/* 扫描结果 */}
-              {scanned.length > 0 && (
+              {runtimeMode === 'codex' && scanned.length > 0 && (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-muted-foreground">
@@ -683,21 +716,23 @@ export function AddAccountDialog({
               )}
 
               {/* 平台选择 */}
-              <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">{t('addAccount.platform')}</Label>
-                <Select value={selectedPlatform} onValueChange={setSelectedPlatform}>
-                  <SelectTrigger className="h-8 text-xs bg-input border-border/50">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {platforms.map(p => (
-                      <SelectItem key={p} value={p}>
-                        {PLATFORM_LABELS[p] || (p.charAt(0).toUpperCase() + p.slice(1))}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              {runtimeMode === 'codex' ? (
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">{t('addAccount.platform')}</Label>
+                  <Select value={selectedPlatform} onValueChange={setSelectedPlatform}>
+                    <SelectTrigger className="h-8 text-xs bg-input border-border/50">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {modePlatforms.map(p => (
+                        <SelectItem key={p} value={p}>
+                          {PLATFORM_LABELS[p] || (p.charAt(0).toUpperCase() + p.slice(1))}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : null}
 
               <DialogFooter>
                 <Button variant="outline" onClick={() => setIsOpen(false)} disabled={adding}>
@@ -707,108 +742,118 @@ export function AddAccountDialog({
                   {adding ? t('addAccount.submitting') : t('addAccount.addSelected', { count: selected.size })}
                 </Button>
               </DialogFooter>
-            </>
-          )}
+              </>
+            )}
 
-          {view === 'api' && (
-            <div className="space-y-4">
-              <button
-                onClick={() => {
-                  if (isEditingApiAccount) {
-                    setIsOpen(false);
-                    return;
-                  }
-                  setView('scan');
-                }}
-                className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-              >
-                <ChevronLeft className="h-3.5 w-3.5" />
-                {t('addAccount.back')}
-              </button>
+            {view === 'api' && (
+              <div className="space-y-4">
+                <button
+                  onClick={() => {
+                    if (isEditingApiAccount) {
+                      setIsOpen(false);
+                      return;
+                    }
+                    setView('scan');
+                  }}
+                  className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                  {t('addAccount.back')}
+                </button>
 
-              <div className="grid gap-3">
-                <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">{t('addAccount.name')}</Label>
-                  <Input value={apiForm.account_id} onChange={e => setApiForm(prev => ({ ...prev, account_id: e.target.value }))} className="text-xs" placeholder={t('addAccount.apiNamePlaceholder')} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">{t('addAccount.emailNote')}</Label>
-                  <Input value={apiForm.email} onChange={e => setApiForm(prev => ({ ...prev, email: e.target.value }))} className="text-xs" placeholder={t('addAccount.emailNotePlaceholder')} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">Base URL</Label>
-                  <Input value={apiForm.api_base_url} onChange={e => setApiForm(prev => ({ ...prev, api_base_url: e.target.value }))} className="text-xs font-mono" placeholder={t('addAccount.baseUrlPlaceholder')} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">API Key</Label>
-                  <Input
-                    type="password"
-                    value={apiForm.api_key}
-                    onChange={e => setApiForm(prev => ({ ...prev, api_key: e.target.value }))}
-                    className="text-xs font-mono"
-                    placeholder={isEditingApiAccount ? t('addAccount.apiKeyKeepPlaceholder') : 'sk-...'}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">{t('addAccount.modelName')}</Label>
-                  <Input value={apiForm.api_model} onChange={e => setApiForm(prev => ({ ...prev, api_model: e.target.value }))} className="text-xs font-mono" placeholder={t('addAccount.modelPlaceholder')} />
-                </div>
+                <div className="grid gap-3">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground">{t('addAccount.apiGroup')}</Label>
+                      <Select value={apiForm.auth_type} onValueChange={value => setApiForm(prev => ({ ...prev, auth_type: value as AccountType }))}>
+                        <SelectTrigger className="h-8 text-xs bg-input border-border/50">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="team">TEAM</SelectItem>
+                          <SelectItem value="plus">PLUS</SelectItem>
+                          <SelectItem value="free">FREE</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground">{t('addAccount.apiCategory')}</Label>
+                      <Select value={selectedPlatform} onValueChange={setSelectedPlatform} disabled={modePlatforms.length <= 1}>
+                        <SelectTrigger className="h-8 text-xs bg-input border-border/50">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {modePlatforms.map(p => (
+                            <SelectItem key={p} value={p}>
+                              {PLATFORM_LABELS[p] || (p.charAt(0).toUpperCase() + p.slice(1))}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">{t('addAccount.name')}</Label>
+                    <Input value={apiForm.account_id} onChange={e => setApiForm(prev => ({ ...prev, account_id: e.target.value }))} className="text-xs" placeholder={t('addAccount.apiNamePlaceholder')} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">{t('addAccount.emailNote')}</Label>
+                    <Input value={apiForm.email} onChange={e => setApiForm(prev => ({ ...prev, email: e.target.value }))} className="text-xs" placeholder={t('addAccount.emailNotePlaceholder')} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Base URL</Label>
+                    <Input value={apiForm.api_base_url} onChange={e => setApiForm(prev => ({ ...prev, api_base_url: e.target.value }))} className="text-xs font-mono" placeholder={t('addAccount.baseUrlPlaceholder')} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">API Key</Label>
+                    <Input
+                      type="password"
+                      value={apiForm.api_key}
+                      onChange={e => setApiForm(prev => ({ ...prev, api_key: e.target.value }))}
+                      className="text-xs font-mono"
+                      placeholder={isEditingApiAccount ? t('addAccount.apiKeyKeepPlaceholder') : 'sk-...'}
+                    />
+                    {isEditingApiAccount ? (
+                      <p className="text-[10px] text-muted-foreground">
+                        {savedApiKeyPreview ? `已保存 Key：${savedApiKeyPreview}，留空则保持不变` : '当前未显示已保存 Key，留空则保持不变'}
+                      </p>
+                    ) : null}
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">{t('addAccount.modelName')}</Label>
+                    <Input value={apiForm.api_model} onChange={e => setApiForm(prev => ({ ...prev, api_model: e.target.value }))} className="text-xs font-mono" placeholder={t('addAccount.modelPlaceholder')} />
+                    <p className="text-[10px] leading-4 text-muted-foreground">
+                      {t('addAccount.modelHint')}
+                    </p>
+                  </div>
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between gap-2">
                     <Label className="text-xs text-muted-foreground">{t('addAccount.apiCliConfig')}</Label>
                     <span className="text-[10px] text-muted-foreground">{t('addAccount.apiCliConfigHint')}</span>
                   </div>
+                  <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-[10px] leading-4 text-amber-700">
+                    {t('addAccount.apiCodexCompatibilityHint')}
+                  </div>
                   <Textarea
                     value={apiForm.api_cli_config}
                     onChange={e => setApiForm(prev => ({ ...prev, api_cli_config: e.target.value }))}
                     className="min-h-[104px] text-xs font-mono bg-input border-border/50"
-                    placeholder={`wire_api = "chat"\nquery_params = { api-version = "2025-01-01-preview" }`}
+                    placeholder={`wire_api = "responses"\nquery_params = { api-version = "2025-01-01-preview" }`}
                   />
                 </div>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground">{t('addAccount.apiGroup')}</Label>
-                    <p className="text-[10px] leading-4 text-muted-foreground">{t('addAccount.apiGroupHint')}</p>
-                    <Select value={apiForm.auth_type} onValueChange={value => setApiForm(prev => ({ ...prev, auth_type: value as AccountType }))}>
-                      <SelectTrigger className="h-8 text-xs bg-input border-border/50">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="team">TEAM</SelectItem>
-                        <SelectItem value="plus">PLUS</SelectItem>
-                        <SelectItem value="free">FREE</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground">{t('addAccount.apiCategory')}</Label>
-                    <p className="text-[10px] leading-4 text-muted-foreground">{t('addAccount.apiCategoryHint')}</p>
-                    <Select value={selectedPlatform} onValueChange={setSelectedPlatform}>
-                      <SelectTrigger className="h-8 text-xs bg-input border-border/50">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {platforms.map(p => (
-                          <SelectItem key={p} value={p}>
-                            {PLATFORM_LABELS[p] || (p.charAt(0).toUpperCase() + p.slice(1))}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
                 </div>
-              </div>
 
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setIsOpen(false)} disabled={adding}>
-                  {t('addAccount.cancel')}
-                </Button>
-                <Button onClick={handleAddApiAccount} disabled={adding}>
-                  {adding ? t('addAccount.submitting') : (isEditingApiAccount ? t('addAccount.saveApiAccount') : t('addAccount.addApiAccount'))}
-                </Button>
-              </DialogFooter>
-            </div>
-          )}
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setIsOpen(false)} disabled={adding}>
+                    {t('addAccount.cancel')}
+                  </Button>
+                  <Button onClick={handleAddApiAccount} disabled={adding}>
+                    {adding ? t('addAccount.submitting') : (isEditingApiAccount ? t('addAccount.saveApiAccount') : t('addAccount.addApiAccount'))}
+                  </Button>
+                </DialogFooter>
+              </div>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
     </>

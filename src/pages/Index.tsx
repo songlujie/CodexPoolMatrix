@@ -357,9 +357,11 @@ const Index = () => {
     <>
       <AccountGrid
         accounts={accounts}
+        runtimeMode={shell.settings?.mode ?? 'codex'}
         onAction={handleAccountAction}
         onRemove={handleAccountRemove}
         onAccountAdded={handleAccountAdded}
+        onAccountUpdated={handleAccountAdded}
         onClearAll={handleClearAll}
         onCheckAllUsage={handleCheckAllUsage}
         onPauseAccounts={handlePauseAccounts}

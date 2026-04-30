@@ -69,6 +69,10 @@ export const api = {
     api_model?: string;
     api_cli_config?: string;
   }) => request<Account>(`/api/accounts/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
+  updateApiAccountModel: (id: string, api_model: string) => request<Account>(`/api/accounts/${id}/model`, {
+    method: 'PUT',
+    body: JSON.stringify({ api_model }),
+  }),
   getClaudeLocalConfig: () => request<{
     ok: boolean;
     found: boolean;
@@ -113,6 +117,7 @@ export const api = {
     plan_type?: string | null;
     provider?: 'api';
     model_available?: boolean;
+    model_listed?: boolean | null;
     model_count?: number;
     primary?: { used_percent: number; window_minutes: number; resets_at: string | null } | null;
     secondary?: { used_percent: number; window_minutes: number; resets_at: string | null } | null;

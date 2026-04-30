@@ -70,9 +70,11 @@ function readPersistedFilters(): PersistedAccountGridFilters | null {
 
 interface AccountGridProps {
   accounts: Account[];
+  runtimeMode: 'codex' | 'claude';
   onAction: (action: 'setActive' | 'pause' | 'reset', id: string) => void;
   onRemove: (id: string) => Promise<void>;
   onAccountAdded: () => void;
+  onAccountUpdated?: () => void;
   onClearAll: () => void;
   onCheckAllUsage?: (accountIds?: string[]) => void;
   onPauseAccounts?: (accountIds: string[]) => void;
@@ -83,9 +85,11 @@ interface AccountGridProps {
 
 export function AccountGrid({
   accounts,
+  runtimeMode,
   onAction,
   onRemove,
   onAccountAdded,
+  onAccountUpdated,
   onClearAll,
   onCheckAllUsage,
   onPauseAccounts,
@@ -93,6 +97,7 @@ export function AccountGrid({
   refreshKey,
   pushedUsageMap,
 }: AccountGridProps) {
+  const modeAccounts = accounts.filter((account) => (runtimeMode === 'claude' ? account.platform === 'claude' : account.platform !== 'claude'));
   const [persistedFilters] = useState<PersistedAccountGridFilters | null>(() => readPersistedFilters());
   const [platformFilter, setPlatformFilter] = useState<string | 'all'>(persistedFilters?.platformFilter ?? DEFAULT_ACCOUNT_GRID_FILTERS.platformFilter);
   const [providerFilter, setProviderFilter] = useState<ProviderFilter>(persistedFilters?.providerFilter ?? DEFAULT_ACCOUNT_GRID_FILTERS.providerFilter);
@@ -164,11 +169,11 @@ export function AccountGrid({
     }, { replace: true });
   }, [searchParams, setSearchParams]);
 
-  const activeCount = accounts.filter(a => a.status === 'active').length;
-  const currentCount = accounts.filter(a => a.is_current).length;
-  const abnormalCount = accounts.filter(a => ABNORMAL_STATUSES.has(a.status)).length;
-  const apiCount = accounts.filter(a => a.provider_mode === 'api').length;
-  const oauthCount = accounts.filter(a => a.provider_mode !== 'api').length;
+  const activeCount = modeAccounts.filter(a => a.status === 'active').length;
+  const currentCount = modeAccounts.filter(a => a.is_current).length;
+  const abnormalCount = modeAccounts.filter(a => ABNORMAL_STATUSES.has(a.status)).length;
+  const apiCount = modeAccounts.filter(a => a.provider_mode === 'api').length;
+  const oauthCount = modeAccounts.filter(a => a.provider_mode !== 'api').length;
   const hasActiveFilters = platformFilter !== DEFAULT_ACCOUNT_GRID_FILTERS.platformFilter
     || providerFilter !== DEFAULT_ACCOUNT_GRID_FILTERS.providerFilter
     || scopeFilter !== DEFAULT_ACCOUNT_GRID_FILTERS.scopeFilter
@@ -176,7 +181,7 @@ export function AccountGrid({
     || search !== DEFAULT_ACCOUNT_GRID_FILTERS.search
     || viewMode !== DEFAULT_ACCOUNT_GRID_FILTERS.viewMode;
 
-  const filtered = accounts.filter(a => {
+  const filtered = modeAccounts.filter(a => {
     if (platformFilter !== 'all' && (a.platform || 'gpt') !== platformFilter) return false;
     if (providerFilter === 'api' && a.provider_mode !== 'api') return false;
     if (providerFilter === 'oauth' && a.provider_mode === 'api') return false;
@@ -225,11 +230,11 @@ export function AccountGrid({
   };
 
   const handleClearAll = async () => {
-    if (accounts.length === 0) {
+    if (modeAccounts.length === 0) {
       toast.info(t('toast.noAccountsToClear'));
       return;
     }
-    const confirmed = window.confirm(t('toast.confirmClear', { count: accounts.length }));
+    const confirmed = window.confirm(t('toast.confirmClear', { count: modeAccounts.length }));
     if (!confirmed) return;
 
     setClearingAll(true);
@@ -274,7 +279,7 @@ export function AccountGrid({
     {
       key: 'total',
       label: t('dashboard.summary.totalAccounts'),
-      value: accounts.length,
+      value: modeAccounts.length,
       active: scopeFilter === 'all' && providerFilter === 'all',
       onClick: () => {
         setScopeFilter('all');
@@ -372,7 +377,7 @@ export function AccountGrid({
       </div>
       <FilterBar
         activeCount={activeCount}
-        totalCount={accounts.length}
+        totalCount={modeAccounts.length}
         filteredCount={filtered.length}
         selectedPlatform={platformFilter}
         onPlatformChange={setPlatformFilter}
@@ -382,7 +387,7 @@ export function AccountGrid({
         onScopeFilterChange={setScopeFilter}
         sortBy={sortBy}
         onSortByChange={setSortBy}
-        platforms={platforms}
+        platforms={platforms.filter((platform) => (runtimeMode === 'claude' ? platform === 'claude' : platform !== 'claude'))}
         onAddPlatform={handleAddPlatform}
         onDeletePlatform={handleDeletePlatform}
         searchQuery={search}
@@ -394,7 +399,7 @@ export function AccountGrid({
         hasActiveFilters={hasActiveFilters}
         lastRefresh={lastRefresh}
         extraActions={
-          accounts.length > 0 ? (
+          modeAccounts.length > 0 ? (
             <div className="flex items-center gap-1">
               {onCheckAllUsage ? (
                 <Button
@@ -405,7 +410,7 @@ export function AccountGrid({
                   disabled={batchActionsDisabled || filtered.length === 0}
                 >
                   <Zap className="h-3 w-3" />
-                  {filtered.length !== accounts.length ? t('filter.checkFiltered') : t('filter.checkAll')}
+                  {filtered.length !== modeAccounts.length ? t('filter.checkFiltered') : t('filter.checkAll')}
                 </Button>
               ) : null}
               {onPauseAccounts ? (
@@ -417,7 +422,7 @@ export function AccountGrid({
                   disabled={batchActionsDisabled || filtered.length === 0}
                 >
                   <PauseCircle className="h-3 w-3" />
-                  {filtered.length !== accounts.length ? t('filter.pauseFiltered') : t('filter.pauseAllVisible')}
+                  {filtered.length !== modeAccounts.length ? t('filter.pauseFiltered') : t('filter.pauseAllVisible')}
                 </Button>
               ) : null}
               <Button
@@ -458,6 +463,7 @@ export function AccountGrid({
               onReset={handleReset}
               onRemove={handleRemove}
               onEditApiAccount={handleEditApiAccount}
+              onAccountUpdated={onAccountUpdated}
               refreshKey={refreshKey}
               viewMode={viewMode}
               externalUsage={usageMap[account.id] ?? null}
@@ -484,6 +490,7 @@ export function AccountGrid({
               onOpenChange={setAddDialogOpen}
               onAccountAdded={onAccountAdded}
               platforms={platforms}
+              runtimeMode={runtimeMode}
             />
             <AddAccountDialog
               hideTrigger
@@ -496,6 +503,7 @@ export function AccountGrid({
                 onAccountAdded();
               }}
               platforms={platforms}
+              runtimeMode={runtimeMode}
               editingAccount={editingApiAccount}
             />
           </Suspense>

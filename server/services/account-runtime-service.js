@@ -13,7 +13,15 @@ export function createAccountRuntimeService({
   requestJson,
   normalizeApiBaseUrl,
   buildRelayUrl,
+  buildClaudeRelayModelsUrl,
 }) {
+  function getModeCurrentAccountColumn(runtimeMode, accountPlatform) {
+    if (runtimeMode === 'claude' || accountPlatform === 'claude') {
+      return 'current_claude_account_id';
+    }
+    return 'current_codex_account_id';
+  }
+
   async function applyAccountToRuntime(nextAccount, runtimeMode) {
     if (isApiAccount(nextAccount)) {
       await activateApiProviderForMode(nextAccount, runtimeMode);
@@ -54,12 +62,14 @@ export function createAccountRuntimeService({
 
   async function performAccountSwitch(nextAccount, reason) {
     const runtimeMode = await getSelectedRuntimeMode();
+    const settingsColumn = getModeCurrentAccountColumn(runtimeMode, nextAccount.platform);
     await applyAccountToRuntime(nextAccount, runtimeMode);
 
     await pool.execute(
       "UPDATE accounts SET is_current = FALSE, status = CASE WHEN status = 'active' THEN 'idle' ELSE status END, updated_at = NOW()",
     );
     await pool.execute("UPDATE accounts SET is_current = TRUE, status = 'active', updated_at = NOW() WHERE id = ?", [nextAccount.id]);
+    await pool.execute(`UPDATE settings SET ${settingsColumn} = ?, updated_at = NOW() WHERE id = 1`, [nextAccount.id]);
     await createLog({ accountId: nextAccount.id, message: reason });
   }
 
@@ -70,15 +80,19 @@ export function createAccountRuntimeService({
   }
 
   async function fetchUsageForApiAccount(account) {
-    const baseUrl = normalizeApiBaseUrl(account.api_base_url);
+    const platform = String(account.platform || '').trim().toLowerCase();
+    const baseUrl = platform === 'claude'
+      ? buildClaudeRelayModelsUrl(account.api_base_url)
+      : normalizeApiBaseUrl(account.api_base_url);
     const apiKey = String(account.api_key || '').trim();
-    const requiresApiKey = String(account.platform || '').trim().toLowerCase() !== 'claude';
+    const requiresApiKey = platform !== 'claude';
 
     if (!baseUrl) return { ok: false, error: 'api_base_url_missing' };
     if (requiresApiKey && !apiKey) return { ok: false, error: 'api_key_missing' };
 
     try {
-      const resp = await requestJson(buildRelayUrl(baseUrl, 'models'), {
+      const url = platform === 'claude' ? baseUrl : buildRelayUrl(baseUrl, 'models');
+      const resp = await requestJson(url, {
         headers: {
           ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
           Accept: 'application/json',
@@ -94,19 +108,10 @@ export function createAccountRuntimeService({
       }
 
       const models = Array.isArray(resp.json?.data) ? resp.json.data : [];
-      const modelAvailable = account.api_model
+      const hasConfiguredModel = Boolean(String(account.api_model || '').trim());
+      const modelListed = hasConfiguredModel
         ? models.some((model) => model?.id === account.api_model)
-        : true;
-
-      if (account.api_model && !modelAvailable) {
-        return {
-          ok: false,
-          error: 'api_model_not_found',
-          status: 404,
-          provider: 'api',
-          model_count: models.length,
-        };
-      }
+        : null;
 
       return {
         ok: true,
@@ -114,7 +119,8 @@ export function createAccountRuntimeService({
         primary: null,
         secondary: null,
         provider: 'api',
-        model_available: modelAvailable,
+        model_available: true,
+        model_listed: modelListed,
         model_count: models.length,
       };
     } catch (error) {
@@ -277,6 +283,7 @@ export function createAccountRuntimeService({
         fetched_at: new Date().toISOString(),
         provider: 'api',
         model_available: usage.model_available ?? true,
+        model_listed: usage.model_listed ?? null,
         model_count: usage.model_count ?? 0,
       };
     }
@@ -311,7 +318,13 @@ export function createAccountRuntimeService({
       const targetAccount = targetRows[0];
       await performAccountSwitch(targetAccount, `手动切换至 ${targetAccount.account_id}`);
     } else if (action === 'pause') {
+      const [targetRows] = await pool.execute('SELECT id, platform, is_current FROM accounts WHERE id = ?', [id]);
+      const targetAccount = targetRows[0];
       await pool.execute("UPDATE accounts SET status = 'idle', is_current = FALSE, updated_at = NOW() WHERE id = ?", [id]);
+      if (targetAccount?.is_current) {
+        const settingsColumn = getModeCurrentAccountColumn(undefined, targetAccount.platform);
+        await pool.execute(`UPDATE settings SET ${settingsColumn} = NULL, updated_at = NOW() WHERE id = 1`);
+      }
       await createLog({ accountId: id, level: 'warn', message: 'Account paused' });
     } else if (action === 'reset') {
       await pool.execute(

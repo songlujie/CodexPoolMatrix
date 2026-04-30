@@ -41,11 +41,14 @@ export function AccountCardCliConfigDialog({
           <p className="text-[11px] text-muted-foreground">
             `base_url` 仍由账号的 Base URL 单独控制，这里只写 provider 内其余 TOML 配置；不要写 table，也不要重复 key。
           </p>
+          <div className="rounded-md border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-[11px] leading-5 text-amber-700">
+            Codex 当前只支持 `wire_api = "responses"`；如果中转站只支持 `/chat/completions`，则无法用于 Codex。
+          </div>
           <Textarea
             value={value}
             onChange={(e) => onValueChange(e.target.value)}
             className="min-h-[180px] text-xs font-mono bg-input border-border/50"
-            placeholder={`wire_api = "chat"\nquery_params = { api-version = "2025-01-01-preview" }`}
+            placeholder={`wire_api = "responses"\nquery_params = { api-version = "2025-01-01-preview" }`}
           />
           <div className="space-y-1">
             <p className="text-[11px] text-muted-foreground">{previewLabel}</p>

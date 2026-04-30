@@ -298,7 +298,14 @@ function stripTomlLineComment(line = '') {
 }
 
 function validateApiCliConfigSnippet(snippet = '') {
-  return sanitizeApiCliConfigSnippet(snippet);
+  const sanitized = sanitizeApiCliConfigSnippet(snippet);
+  const wireApi = readTopLevelTomlString(sanitized, 'wire_api');
+
+  if (wireApi && wireApi !== 'responses') {
+    throw createConfigValidationError('Codex 当前仅支持 wire_api = "responses"，不再支持其他协议配置');
+  }
+
+  return sanitized;
 }
 
 function validateTomlForDuplicateKeys(content = '', fileLabel = 'config.toml') {
@@ -556,11 +563,57 @@ async function restoreCodexOAuthProvider() {
 }
 
 function normalizeClaudeBaseUrl(baseUrl = '') {
-  return String(baseUrl || '').trim().replace(/\/+$/, '');
+  const trimmed = String(baseUrl || '').trim().replace(/\/+$/, '');
+  if (!trimmed) return '';
+
+  try {
+    const parsed = new URL(trimmed);
+    const hostname = parsed.hostname.toLowerCase();
+    const pathname = parsed.pathname.replace(/\/+$/, '') || '/';
+
+    if (hostname.endsWith('xiaomimimo.com')) {
+      if (pathname === '/v1' || pathname === '/v1/messages') {
+        return `${parsed.origin}/anthropic`;
+      }
+      if (pathname === '/anthropic/v1' || pathname === '/anthropic/v1/messages') {
+        return `${parsed.origin}/anthropic`;
+      }
+    }
+  } catch {
+    return trimmed;
+  }
+
+  return trimmed;
+}
+
+function buildClaudeRelayModelsUrl(baseUrl = '') {
+  const normalized = normalizeClaudeBaseUrl(baseUrl);
+  if (!normalized) return '';
+
+  try {
+    const parsed = new URL(normalized);
+    if (parsed.hostname.toLowerCase().endsWith('xiaomimimo.com')) {
+      return `${parsed.origin}/v1/models`;
+    }
+  } catch {
+    return '';
+  }
+
+  return buildRelayUrl(normalized, 'models');
 }
 
 function ensurePlainObject(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? { ...value } : {};
+}
+
+function resolveClaudeModelFromEnv(env = {}) {
+  return String(
+    env.ANTHROPIC_MODEL
+    || env.ANTHROPIC_DEFAULT_SONNET_MODEL
+    || env.ANTHROPIC_DEFAULT_OPUS_MODEL
+    || env.ANTHROPIC_DEFAULT_HAIKU_MODEL
+    || '',
+  ).trim() || null;
 }
 
 async function readClaudeSettings() {
@@ -601,6 +654,9 @@ async function captureClaudePreviousState() {
       ANTHROPIC_AUTH_TOKEN: String(env.ANTHROPIC_AUTH_TOKEN || '').trim() || null,
       ANTHROPIC_BASE_URL: normalizeClaudeBaseUrl(env.ANTHROPIC_BASE_URL || '') || null,
       ANTHROPIC_MODEL: String(env.ANTHROPIC_MODEL || '').trim() || null,
+      ANTHROPIC_DEFAULT_SONNET_MODEL: String(env.ANTHROPIC_DEFAULT_SONNET_MODEL || '').trim() || null,
+      ANTHROPIC_DEFAULT_OPUS_MODEL: String(env.ANTHROPIC_DEFAULT_OPUS_MODEL || '').trim() || null,
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: String(env.ANTHROPIC_DEFAULT_HAIKU_MODEL || '').trim() || null,
     },
   };
 }
@@ -613,6 +669,130 @@ function restoreClaudeEnvVariable(env, key, value) {
   delete env[key];
 }
 
+function extractRelayModelIds(payload) {
+  const rows = Array.isArray(payload?.data) ? payload.data : [];
+  const ids = [];
+
+  for (const row of rows) {
+    const id = String(row?.id || '').trim();
+    if (id) {
+      ids.push(id);
+    }
+  }
+
+  return [...new Set(ids)];
+}
+
+function buildClaudeModelHints(account) {
+  const hints = new Set();
+  const accountId = String(account?.account_id || '').trim().toLowerCase();
+
+  if (accountId) {
+    for (const part of accountId.split(/[^a-z0-9]+/i)) {
+      const normalized = part.trim().toLowerCase();
+      if (normalized.length >= 2) {
+        hints.add(normalized);
+      }
+    }
+  }
+
+  try {
+    const hostname = new URL(normalizeClaudeBaseUrl(account?.api_base_url || '')).hostname.toLowerCase();
+    for (const part of hostname.split(/[^a-z0-9]+/i)) {
+      const normalized = part.trim().toLowerCase();
+      if (normalized.length >= 2) {
+        hints.add(normalized);
+      }
+    }
+  } catch {
+    // Ignore invalid base URLs here. Validation happens elsewhere.
+  }
+
+  return [...hints];
+}
+
+function pickBestClaudeRelayModel(modelIds, account) {
+  if (!Array.isArray(modelIds) || modelIds.length === 0) {
+    return null;
+  }
+
+  const hints = buildClaudeModelHints(account);
+  const scored = modelIds.map((id, index) => {
+    const normalized = id.toLowerCase();
+    let score = 0;
+
+    for (const hint of hints) {
+      if (normalized === hint) score += 150;
+      if (normalized.startsWith(`${hint}-`) || normalized.endsWith(`-${hint}`)) score += 120;
+      if (normalized.includes(hint)) score += 80;
+    }
+
+    if (!normalized.startsWith('claude-')) {
+      score += 20;
+    }
+
+    if (normalized.includes('mimo')) score += 140;
+    if (normalized.includes('deepseek')) score += 70;
+    if (normalized.includes('v2.5')) score += 40;
+    if (normalized.includes('v2')) score += 15;
+    if (normalized.includes('pro')) score += 28;
+    if (normalized.includes('omni')) score += 12;
+    if (normalized.includes('flash')) score -= 10;
+    if (normalized.includes('mini') || normalized.includes('lite')) score -= 16;
+    if (normalized.includes('tts')) score -= 120;
+    if (normalized.includes('voice')) score -= 120;
+    if (normalized.includes('audio')) score -= 80;
+    if (normalized.includes('speech')) score -= 80;
+    if (normalized.includes('embedding') || normalized.includes('embed')) score -= 100;
+    if (normalized.includes('rerank')) score -= 100;
+    if (normalized.includes('image')) score -= 90;
+    if (normalized.includes('sonnet')) score -= 5;
+    if (normalized.includes('haiku')) score -= 8;
+    if (normalized.includes('opus')) score -= 10;
+
+    return { id, score, index };
+  });
+
+  scored.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    return a.index - b.index;
+  });
+
+  return scored[0]?.id || null;
+}
+
+async function resolveClaudeActivationModel(account) {
+  const configuredModel = String(account.api_model || '').trim();
+  if (configuredModel) {
+    return configuredModel;
+  }
+
+  const modelsUrl = buildClaudeRelayModelsUrl(account.api_base_url);
+  const apiKey = String(account.api_key || '').trim();
+  if (!modelsUrl) {
+    return null;
+  }
+
+  try {
+    const resp = await requestJson(modelsUrl, {
+      headers: {
+        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+        Accept: 'application/json',
+      },
+      timeoutMs: 15000,
+    });
+
+    if (!resp.ok) {
+      return null;
+    }
+
+    const modelIds = extractRelayModelIds(resp.json);
+    return pickBestClaudeRelayModel(modelIds, account);
+  } catch {
+    return null;
+  }
+}
+
 async function activateClaudeApiProvider(account) {
   const currentSettings = await readClaudeSettings();
   const existingState = await readClaudeMatrixState();
@@ -620,7 +800,7 @@ async function activateClaudeApiProvider(account) {
   const nextSettings = ensurePlainObject(currentSettings);
   const nextEnv = ensurePlainObject(nextSettings.env);
   const apiBaseUrl = normalizeClaudeBaseUrl(account.api_base_url);
-  const apiModel = String(account.api_model || '').trim();
+  const apiModel = await resolveClaudeActivationModel(account);
 
   nextEnv.ANTHROPIC_AUTH_TOKEN = String(account.api_key || '').trim();
   if (apiBaseUrl) {
@@ -631,12 +811,22 @@ async function activateClaudeApiProvider(account) {
 
   if (apiModel) {
     nextEnv.ANTHROPIC_MODEL = apiModel;
+    nextEnv.ANTHROPIC_DEFAULT_SONNET_MODEL = apiModel;
+    nextEnv.ANTHROPIC_DEFAULT_OPUS_MODEL = apiModel;
+    nextEnv.ANTHROPIC_DEFAULT_HAIKU_MODEL = apiModel;
   } else {
     delete nextEnv.ANTHROPIC_MODEL;
+    delete nextEnv.ANTHROPIC_DEFAULT_SONNET_MODEL;
+    delete nextEnv.ANTHROPIC_DEFAULT_OPUS_MODEL;
+    delete nextEnv.ANTHROPIC_DEFAULT_HAIKU_MODEL;
   }
 
   nextSettings.env = nextEnv;
   await writeClaudeSettings(nextSettings);
+  if (apiModel && apiModel !== String(account.api_model || '').trim() && account?.id) {
+    await pool.execute('UPDATE accounts SET api_model = ?, updated_at = NOW() WHERE id = ?', [apiModel, account.id]);
+    await createLog({ accountId: account.id, message: `[Claude] 已自动识别可用模型 ${apiModel}` });
+  }
   await writeClaudeMatrixState({
     mode: 'api',
     account_id: account.account_id,
@@ -657,6 +847,9 @@ async function activateClaudeOAuthProvider(account) {
   restoreClaudeEnvVariable(nextEnv, 'ANTHROPIC_AUTH_TOKEN', previous.env?.ANTHROPIC_AUTH_TOKEN);
   restoreClaudeEnvVariable(nextEnv, 'ANTHROPIC_BASE_URL', previous.env?.ANTHROPIC_BASE_URL);
   restoreClaudeEnvVariable(nextEnv, 'ANTHROPIC_MODEL', previous.env?.ANTHROPIC_MODEL);
+  restoreClaudeEnvVariable(nextEnv, 'ANTHROPIC_DEFAULT_SONNET_MODEL', previous.env?.ANTHROPIC_DEFAULT_SONNET_MODEL);
+  restoreClaudeEnvVariable(nextEnv, 'ANTHROPIC_DEFAULT_OPUS_MODEL', previous.env?.ANTHROPIC_DEFAULT_OPUS_MODEL);
+  restoreClaudeEnvVariable(nextEnv, 'ANTHROPIC_DEFAULT_HAIKU_MODEL', previous.env?.ANTHROPIC_DEFAULT_HAIKU_MODEL);
 
   if (Object.keys(nextEnv).length > 0) {
     nextSettings.env = nextEnv;
@@ -929,6 +1122,16 @@ app.use(cors({ origin: config.frontendOrigin }));
 app.use(express.json());
 
 function mapAccount(row) {
+  let apiModelOptions = [];
+  try {
+    const parsed = JSON.parse(String(row.api_model_options || '[]'));
+    apiModelOptions = Array.isArray(parsed)
+      ? parsed.map((item) => String(item || '').trim()).filter(Boolean)
+      : [];
+  } catch {
+    apiModelOptions = [];
+  }
+
   return {
     ...row,
     is_current: Boolean(row.is_current),
@@ -937,6 +1140,7 @@ function mapAccount(row) {
     provider_mode: row.provider_mode || 'oauth',
     api_base_url: row.api_base_url || '',
     api_model: row.api_model || '',
+    api_model_options: apiModelOptions,
     api_cli_config: row.api_cli_config || '',
   };
 }
@@ -959,6 +1163,7 @@ const codexReadService = createCodexReadService({
   readClaudeMatrixState,
   readClaudeSettings,
   normalizeClaudeBaseUrl,
+  buildClaudeRelayModelsUrl,
   getAuthIdentity,
   codePaths: {
     authPath: CODEX_AUTH_PATH,
@@ -996,6 +1201,7 @@ const accountsService = createAccountsService({
   readClaudeSettings,
   readClaudeMatrixState,
   normalizeClaudeBaseUrl,
+  buildClaudeRelayModelsUrl,
 });
 
 const authRuntimeService = createAuthRuntimeService({
@@ -1036,6 +1242,7 @@ const accountRuntimeService = createAccountRuntimeService({
   requestJson,
   normalizeApiBaseUrl,
   buildRelayUrl,
+  buildClaudeRelayModelsUrl,
 });
 
 // ─── Health ───
@@ -1071,6 +1278,10 @@ app.post('/api/accounts', asyncHandler(async (req, res) => {
 
 app.put('/api/accounts/:id', asyncHandler(async (req, res) => {
   res.json(await accountsService.updateApiAccount(req.params.id, req.body));
+}));
+
+app.put('/api/accounts/:id/model', asyncHandler(async (req, res) => {
+  res.json(await accountsService.updateApiAccountModel(req.params.id, req.body?.api_model));
 }));
 
 app.get('/api/claude/local-config', asyncHandler(async (_req, res) => {
@@ -1231,17 +1442,20 @@ app.get('/api/settings', asyncHandler(async (_req, res) => {
 }));
 
 app.put('/api/settings', asyncHandler(async (req, res) => {
-  const previousMode = await getSelectedRuntimeMode();
+  const previousSettings = await getSettings();
   const nextSettings = await updateSettings(req.body);
-  const nextMode = normalizeRuntimeMode(nextSettings.mode);
 
-  if (previousMode !== nextMode) {
-    const [currentRows] = await pool.query("SELECT * FROM accounts WHERE is_current = TRUE LIMIT 1");
-    if (currentRows[0]) {
-      await accountRuntimeService.syncRuntimeForAccount(
-        currentRows[0],
-        `Runtime switched to ${nextMode} for ${currentRows[0].account_id}`,
-      );
+  if (previousSettings.mode !== nextSettings.mode) {
+    const targetColumn = nextSettings.mode === 'claude' ? 'current_claude_account_id' : 'current_codex_account_id';
+    const targetAccountId = nextSettings[targetColumn];
+    if (targetAccountId) {
+      const [targetRows] = await pool.query('SELECT * FROM accounts WHERE id = ? LIMIT 1', [targetAccountId]);
+      const targetAccount = targetRows[0];
+      const matchesMode = targetAccount
+        && (nextSettings.mode === 'claude' ? targetAccount.platform === 'claude' : targetAccount.platform !== 'claude');
+      if (matchesMode) {
+        await accountRuntimeService.performAccountSwitch(targetRows[0], `[模式切换] 已恢复 ${nextSettings.mode === 'claude' ? 'Claude' : 'Codex'} 账号 ${targetRows[0].account_id}`);
+      }
     }
   }
 

@@ -25,6 +25,16 @@ export function createCodexReadService({
       : {};
   }
 
+  function resolveClaudeApiModel(env) {
+    return String(
+      env.ANTHROPIC_MODEL
+      || env.ANTHROPIC_DEFAULT_SONNET_MODEL
+      || env.ANTHROPIC_DEFAULT_OPUS_MODEL
+      || env.ANTHROPIC_DEFAULT_HAIKU_MODEL
+      || '',
+    ).trim() || null;
+  }
+
   return {
     async getCurrentAuth() {
       const runtimeMode = await getSelectedRuntimeMode();
@@ -34,7 +44,7 @@ export function createCodexReadService({
         const env = getClaudeEnv(settings);
         const apiKey = String(env.ANTHROPIC_AUTH_TOKEN || '').trim();
         const apiBaseUrl = normalizeClaudeBaseUrl(env.ANTHROPIC_BASE_URL || '');
-        const apiModel = String(env.ANTHROPIC_MODEL || '').trim() || null;
+        const apiModel = resolveClaudeApiModel(env);
 
         if (matrixState?.mode === 'oauth') {
           return {
@@ -137,7 +147,7 @@ export function createCodexReadService({
         const env = getClaudeEnv(settings);
         const apiKey = String(env.ANTHROPIC_AUTH_TOKEN || '').trim();
         const apiBaseUrl = normalizeClaudeBaseUrl(env.ANTHROPIC_BASE_URL || '');
-        const apiModel = String(env.ANTHROPIC_MODEL || '').trim() || null;
+        const apiModel = resolveClaudeApiModel(env);
         const expectedAccountId = isApiAccount(currentAccount) ? currentAccount.account_id : null;
         const expectsToken = Boolean(String(currentAccount?.api_key || '').trim());
         const managed = matrixState?.mode === 'api'

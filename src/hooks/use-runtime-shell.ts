@@ -17,6 +17,10 @@ interface UseRuntimeShellOptions {
   includeLogs?: boolean;
 }
 
+function accountMatchesMode(account: { platform: string }, mode: 'codex' | 'claude') {
+  return mode === 'claude' ? account.platform === 'claude' : account.platform !== 'claude';
+}
+
 export function useRuntimeShell(options: UseRuntimeShellOptions = {}) {
   const { logParams, pollIntervalMs, includeLogs = false } = options;
   const queryClient = useQueryClient();
@@ -65,7 +69,8 @@ export function useRuntimeShell(options: UseRuntimeShellOptions = {}) {
   }, [queryClient, refreshShell, settingsQuery.data]);
 
   const accounts = accountsQuery.data || [];
-  const currentAccount = accounts.find((account) => account.is_current);
+  const runtimeMode = settingsQuery.data?.mode ?? 'codex';
+  const currentAccount = accounts.find((account) => account.is_current && accountMatchesMode(account, runtimeMode));
 
   return {
     accounts,

@@ -20,42 +20,54 @@ export async function getSettings() {
 }
 
 export async function updateSettings(body) {
+  const currentSettings = await getSettings();
   const normalizedMode = normalizeStoredMode(body.mode);
+  const nextSettings = {
+    ...currentSettings,
+    ...body,
+    mode: normalizedMode,
+    current_codex_account_id: body.current_codex_account_id ?? currentSettings.current_codex_account_id ?? null,
+    current_claude_account_id: body.current_claude_account_id ?? currentSettings.current_claude_account_id ?? null,
+  };
+
   await pool.execute(
     `UPDATE settings SET
       strategy = ?, auto_rotation = ?, rest_after_tasks = ?, cooldown_minutes = ?,
       rate_limit_buffer = ?, max_concurrent_tasks = ?, global_rate_limit = ?,
       auto_retry = ?, max_retries = ?, task_timeout_minutes = ?, auto_dispatch = ?,
       openclaw_endpoint = ?, openclaw_api_key = ?, codex_path = ?, trae_path = ?,
-      mode = ?, auto_launch = ?, auto_token_refresh = ?, token_refresh_interval_hours = ?,
+      mode = ?, current_codex_account_id = ?, current_claude_account_id = ?,
+      auto_launch = ?, auto_token_refresh = ?, token_refresh_interval_hours = ?,
       updated_at = NOW()
     WHERE id = 1`,
     [
-      body.strategy,
-      body.auto_rotation,
-      body.rest_after_tasks,
-      body.cooldown_minutes,
-      body.rate_limit_buffer,
-      body.max_concurrent_tasks,
-      body.global_rate_limit,
-      body.auto_retry,
-      body.max_retries,
-      body.task_timeout_minutes,
-      body.auto_dispatch,
-      body.openclaw_endpoint,
-      body.openclaw_api_key,
-      body.codex_path,
-      body.claude_path ?? '',
+      nextSettings.strategy,
+      nextSettings.auto_rotation,
+      nextSettings.rest_after_tasks,
+      nextSettings.cooldown_minutes,
+      nextSettings.rate_limit_buffer,
+      nextSettings.max_concurrent_tasks,
+      nextSettings.global_rate_limit,
+      nextSettings.auto_retry,
+      nextSettings.max_retries,
+      nextSettings.task_timeout_minutes,
+      nextSettings.auto_dispatch,
+      nextSettings.openclaw_endpoint,
+      nextSettings.openclaw_api_key,
+      nextSettings.codex_path,
+      nextSettings.claude_path ?? '',
       toStoredMode(normalizedMode),
-      body.auto_launch,
-      body.auto_token_refresh ?? true,
-      body.token_refresh_interval_hours ?? 72,
+      nextSettings.current_codex_account_id,
+      nextSettings.current_claude_account_id,
+      nextSettings.auto_launch,
+      nextSettings.auto_token_refresh ?? true,
+      nextSettings.token_refresh_interval_hours ?? 72,
     ],
   );
   await createLog({ level: 'info', message: 'Settings updated' });
 
   return {
-    ...body,
+    ...nextSettings,
     mode: normalizedMode,
   };
 }

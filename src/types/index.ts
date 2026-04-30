@@ -24,6 +24,7 @@ export interface Account {
   provider_mode?: ProviderMode;
   api_base_url?: string;
   api_model?: string;
+  api_model_options?: string[];
   api_cli_config?: string;
   platform: string;
   status: AccountStatus;
@@ -124,6 +125,8 @@ export interface PoolSettings {
   codex_path: string;
   claude_path: string;
   mode: 'codex' | 'claude';
+  current_codex_account_id?: string | null;
+  current_claude_account_id?: string | null;
   auto_launch: boolean;
   auto_token_refresh: boolean;
   token_refresh_interval_hours: number;

@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Account, LiveUsageData } from '@/types';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
@@ -21,6 +22,7 @@ interface AccountCardProps {
   onReset: (id: string) => void;
   onRemove: (id: string) => Promise<void>;
   onEditApiAccount?: (account: Account) => void;
+  onAccountUpdated?: () => void;
   refreshKey?: number;
   viewMode?: 'grid' | 'list';
   externalUsage?: LiveUsageData | null;
@@ -29,7 +31,7 @@ interface AccountCardProps {
 
 type AuthInfo = Awaited<ReturnType<typeof api.getAccountAuthInfo>>;
 
-export function AccountCard({ account, onSetActive, onPause, onReset, onRemove, onEditApiAccount, refreshKey, viewMode = 'grid', externalUsage, onUsageUpdate }: AccountCardProps) {
+export function AccountCard({ account, onSetActive, onPause, onReset, onRemove, onEditApiAccount, onAccountUpdated, refreshKey, viewMode = 'grid', externalUsage, onUsageUpdate }: AccountCardProps) {
   const sb = statusBadge[account.status];
   const { t, dateLocale } = useI18n();
   const isApiAccount = account.provider_mode === 'api';
@@ -52,12 +54,15 @@ export function AccountCard({ account, onSetActive, onPause, onReset, onRemove, 
   const [savingCliConfig, setSavingCliConfig] = useState(false);
   const [cliConfigPreview, setCliConfigPreview] = useState('');
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [selectedApiModel, setSelectedApiModel] = useState('');
+  const [savingApiModel, setSavingApiModel] = useState(false);
   const didAutoRefreshRef = useRef(false);
-  const cliConfigSummarySource = authInfo?.api_cli_config || account.api_cli_config || '';
+  const cliConfigSummarySource = account.api_cli_config || authInfo?.api_cli_config || '';
   const cliConfigLineCount = cliConfigSummarySource
     ? cliConfigSummarySource.split(/\r?\n/).map(line => line.trim()).filter(Boolean).length
     : 0;
-  const resolvedApiModel = String(authInfo?.api_model || account.api_model || '').trim();
+  const resolvedApiModel = String(account.api_model || authInfo?.api_model || '').trim();
+  const availableApiModels = [...new Set([...(account.api_model_options || []), resolvedApiModel].map((item) => String(item || '').trim()).filter(Boolean))];
   const apiModelLabel = resolvedApiModel || t('card.apiModelDefault');
 
   const formatUsageError = useCallback((error?: string) => {
@@ -69,7 +74,6 @@ export function AccountCard({ account, onSetActive, onPause, onReset, onRemove, 
     if (error === 'token_invalid') return t('card.tokenInvalid');
     if (error === 'api_base_url_missing') return t('card.apiBaseUrlMissing');
     if (error === 'api_key_missing') return t('card.apiKeyMissing');
-    if (error === 'api_model_not_found') return t('card.apiModelNotFound');
     if (error.includes('连接中转站超时')) return t('card.apiRelayTimeout');
 
     if (error.includes('连接 chatgpt.com 超时') || error.includes('UND_ERR_CONNECT_TIMEOUT')) {
@@ -208,7 +212,7 @@ export function AccountCard({ account, onSetActive, onPause, onReset, onRemove, 
 
   useEffect(() => {
     void fetchAuthInfo();
-  }, [account.auth_file_path, fetchAuthInfo, refreshKey]);
+  }, [account.auth_file_path, account.updated_at, fetchAuthInfo, refreshKey]);
 
   // Sync usage data pushed from parent (batch refresh)
   useEffect(() => {
@@ -221,6 +225,10 @@ export function AccountCard({ account, onSetActive, onPause, onReset, onRemove, 
     setCliConfigValue(account.api_cli_config || authInfo?.api_cli_config || '');
   }, [account.api_cli_config, authInfo?.api_cli_config]);
 
+  useEffect(() => {
+    setSelectedApiModel(resolvedApiModel);
+  }, [resolvedApiModel]);
+
   // 账号变为活跃时自动获取实时用量
   useEffect(() => {
     if (!account.is_current) {
@@ -232,6 +240,25 @@ export function AccountCard({ account, onSetActive, onPause, onReset, onRemove, 
     didAutoRefreshRef.current = true;
     void handleRefreshLiveUsage({ silent: true });
   }, [account.is_current, handleRefreshLiveUsage]);
+
+  const handleApplyApiModel = useCallback(async () => {
+    const nextModel = String(selectedApiModel || '').trim();
+    if (!nextModel || nextModel === resolvedApiModel) {
+      return;
+    }
+
+    setSavingApiModel(true);
+    try {
+      const updated = await api.updateApiAccountModel(account.id, nextModel);
+      setSelectedApiModel(String(updated.api_model || '').trim());
+      toast.success(t('card.apiModelUpdated', { model: updated.api_model || nextModel }));
+      onAccountUpdated?.();
+    } catch (error) {
+      toast.error(formatUsageError(error instanceof Error ? error.message : undefined));
+    } finally {
+      setSavingApiModel(false);
+    }
+  }, [account.id, formatUsageError, onAccountUpdated, resolvedApiModel, selectedApiModel, t]);
 
   useEffect(() => {
     if (!cliConfigOpen || !isApiAccount) return;
@@ -278,14 +305,19 @@ export function AccountCard({ account, onSetActive, onPause, onReset, onRemove, 
   const tokenExpiry = expiryInfo(authInfo?.token_expires_at, 'token');
   const planExpiry = expiryInfo(authInfo?.subscription_expires_at, 'plan');
   const hasAuthFile = authInfo && !authInfo.error;
+  const apiModelListed = usageResult?.provider === 'api' ? usageResult.model_listed : null;
   const apiHealthTone = !usageResult
     ? 'border-border/50 bg-muted/20'
-    : usageResult.ok && usageResult.model_available !== false
+    : usageResult.ok && apiModelListed === false
+      ? 'border-amber-500/30 bg-amber-500/5'
+      : usageResult.ok && usageResult.model_available !== false
       ? 'border-primary/30 bg-primary/5'
       : 'border-destructive/25 bg-destructive/5';
   const apiHealthTextTone = !usageResult
     ? 'text-muted-foreground'
-    : usageResult.ok && usageResult.model_available !== false
+    : usageResult.ok && apiModelListed === false
+      ? 'text-amber-700 font-medium'
+      : usageResult.ok && usageResult.model_available !== false
       ? 'text-primary font-medium'
       : 'text-destructive font-medium';
   const providerBadge = isApiAccount
@@ -508,15 +540,34 @@ export function AccountCard({ account, onSetActive, onPause, onReset, onRemove, 
             <div className="flex items-center gap-1">
               <CheckCircle2 className="h-3 w-3 text-primary shrink-0" />
               <p className="text-[11px] text-foreground font-medium truncate max-w-[170px]">
-                {authInfo?.email || account.email || account.account_id}
+                {account.email || authInfo?.email || account.account_id}
               </p>
             </div>
             <div className="text-[10px] text-muted-foreground break-all">
-              {t('card.apiBaseUrl')}：{authInfo?.api_base_url || account.api_base_url || t('common.none')}
+              {t('card.apiBaseUrl')}：{account.api_base_url || authInfo?.api_base_url || t('common.none')}
             </div>
             <div className="text-[10px] text-muted-foreground break-all">
               {t('card.apiModel')}：{apiModelLabel}
             </div>
+            {availableApiModels.length > 1 && (
+              <div className="flex items-center gap-2">
+                <Select value={selectedApiModel} onValueChange={setSelectedApiModel}>
+                  <SelectTrigger className="h-7 text-[10px] bg-input border-border/50">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableApiModels.map((model) => (
+                      <SelectItem key={model} value={model}>
+                        {model}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button size="sm" variant="outline" className="h-7 px-2 text-[10px]" onClick={() => void handleApplyApiModel()} disabled={savingApiModel || !selectedApiModel || selectedApiModel === resolvedApiModel}>
+                  {savingApiModel ? t('common.saving') : t('card.applyModel')}
+                </Button>
+              </div>
+            )}
             <div className="text-[10px] text-muted-foreground rounded-md border border-border/40 bg-muted/20 px-2 py-1.5">
               {t('card.apiCliConfig')}：{cliConfigLineCount > 0 ? t('card.apiCliConfigSummary', { lines: cliConfigLineCount }) : t('card.apiCliConfigEmpty')}
             </div>
@@ -608,17 +659,22 @@ export function AccountCard({ account, onSetActive, onPause, onReset, onRemove, 
             ) : isApiAccount ? (
               <div className={`rounded-lg border px-3 py-2 space-y-2 ${apiHealthTone}`}>
                 <div className="flex items-center justify-between text-[11px]">
-                  <span className="text-muted-foreground">{t('card.apiModelStatus')}</span>
-                  <span className={apiHealthTextTone}>
-                    {usageResult
-                      ? (usageResult.model_available === false ? t('card.apiModelUnavailable') : t('card.apiModelReachable'))
+                    <span className="text-muted-foreground">{t('card.apiModelStatus')}</span>
+                    <span className={apiHealthTextTone}>
+                      {usageResult
+                      ? (apiModelListed === false ? t('card.apiModelUnlisted') : t('card.apiModelReachable'))
                       : t('card.noData')}
                   </span>
                 </div>
                 {typeof usageResult?.model_count === 'number' && (
-                  <div className="flex items-center justify-between text-[11px]">
-                    <span className="text-muted-foreground">{t('card.apiModelCount')}</span>
-                    <span className="text-foreground tabular-nums">{usageResult.model_count}</span>
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="text-muted-foreground">{t('card.apiModelCount')}</span>
+                      <span className="text-foreground tabular-nums">{usageResult.model_count}</span>
+                    </div>
+                    <p className="text-[10px] leading-4 text-muted-foreground">
+                      {t('card.apiModelCountHint')}
+                    </p>
                   </div>
                 )}
                 {!usageResult && account.is_current && (
@@ -703,12 +759,15 @@ export function AccountCard({ account, onSetActive, onPause, onReset, onRemove, 
 
         {usageResult && (
           <div className={`mt-2 rounded-md px-3 py-2 text-[11px] ${
+            usageResult.ok && usageResult.provider === 'api' && usageResult.model_listed === false ? 'bg-amber-500/5 border border-amber-500/20' :
             usageResult.ok && (usageResult.provider !== 'api' || usageResult.model_available !== false) ? 'bg-primary/5 border border-primary/20' :
             usageResult.rate_limited ? 'bg-destructive/10 border border-destructive/20' :
             'bg-destructive/10 border border-destructive/20'
           }`}>
             <div className="flex items-center gap-1.5 font-medium">
-              {usageResult.ok && (usageResult.provider !== 'api' || usageResult.model_available !== false) ? (
+              {usageResult.ok && usageResult.provider === 'api' && usageResult.model_listed === false ? (
+                <><AlertCircle className="h-3 w-3 text-amber-700" /><span className="text-amber-700">{t('card.apiModelUnlisted')}</span></>
+              ) : usageResult.ok && (usageResult.provider !== 'api' || usageResult.model_available !== false) ? (
                 <><CheckCircle2 className="h-3 w-3 text-primary" /><span className="text-primary">{usageResult.provider === 'api' ? t('card.apiRelayOk') : t('card.codexAvailable')}</span></>
               ) : usageResult.rate_limited ? (
                 <><AlertCircle className="h-3 w-3 text-destructive" /><span className="text-destructive">{t('card.codexRateLimited')}</span></>

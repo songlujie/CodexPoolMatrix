@@ -22,6 +22,7 @@ export function createAccountsService({
   readClaudeSettings,
   readClaudeMatrixState,
   normalizeClaudeBaseUrl,
+  buildClaudeRelayModelsUrl,
 }) {
   const SAMPLE_ACCOUNT_IDS = new Set(['a26', 'a62', 'a03', 'JERRY', 'b14', 'c88', 'd42', 'e99', 'f17', 'g05']);
 
@@ -74,6 +75,16 @@ export function createAccountsService({
       : {};
   }
 
+  function resolveClaudeApiModel(env) {
+    return String(
+      env.ANTHROPIC_MODEL
+      || env.ANTHROPIC_DEFAULT_SONNET_MODEL
+      || env.ANTHROPIC_DEFAULT_OPUS_MODEL
+      || env.ANTHROPIC_DEFAULT_HAIKU_MODEL
+      || '',
+    ).trim();
+  }
+
   function sanitizeAccountName(value) {
     return String(value || '')
       .trim()
@@ -84,11 +95,179 @@ export function createAccountsService({
       .slice(0, 120);
   }
 
+  function getModeCurrentAccountColumn(runtimeMode) {
+    return runtimeMode === 'claude' ? 'current_claude_account_id' : 'current_codex_account_id';
+  }
+
+  function splitModelCandidates(rawValue) {
+    return [...new Set(
+      String(rawValue || '')
+        .split(/[、，,\n\r;；|]+/g)
+        .map((item) => item.trim())
+        .filter(Boolean),
+    )];
+  }
+
+  function normalizeRelayBaseUrl(baseUrl = '') {
+    const trimmed = String(baseUrl || '').trim();
+    if (!trimmed) return '';
+    return trimmed.endsWith('/') ? trimmed : `${trimmed}/`;
+  }
+
+  function buildRelayResourceUrl(baseUrl, resourcePath) {
+    return new URL(resourcePath.replace(/^\//, ''), normalizeRelayBaseUrl(baseUrl)).toString();
+  }
+
+  function parseStoredModelOptions(rawValue) {
+    if (Array.isArray(rawValue)) {
+      return [...new Set(rawValue.map((item) => String(item || '').trim()).filter(Boolean))];
+    }
+
+    const trimmed = String(rawValue || '').trim();
+    if (!trimmed) {
+      return [];
+    }
+
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return [...new Set(parsed.map((item) => String(item || '').trim()).filter(Boolean))];
+      }
+    } catch {
+      // ignore invalid json
+    }
+
+    return splitModelCandidates(trimmed);
+  }
+
+  async function fetchRelayModelIds({ api_base_url, api_key, platform }) {
+    const normalizedPlatform = String(platform || '').trim().toLowerCase();
+    const rawBaseUrl = normalizedPlatform === 'claude'
+      ? buildClaudeRelayModelsUrl(api_base_url)
+      : api_base_url;
+    const baseUrl = normalizeRelayBaseUrl(rawBaseUrl);
+    const apiKey = String(api_key || '').trim();
+    if (!baseUrl) {
+      return [];
+    }
+
+    try {
+      const resp = await requestJson(buildRelayResourceUrl(baseUrl, 'models'), {
+        headers: {
+          ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+          Accept: 'application/json',
+        },
+        timeoutMs: 15000,
+      });
+
+      if (!resp.ok) {
+        return [];
+      }
+
+      const rows = Array.isArray(resp.json?.data) ? resp.json.data : [];
+      return [...new Set(rows.map((row) => String(row?.id || '').trim()).filter(Boolean))];
+    } catch {
+      return [];
+    }
+  }
+
+  function canonicalizeCandidatesByRelay(candidates, relayModelIds) {
+    if (!Array.isArray(candidates) || candidates.length === 0) {
+      return [];
+    }
+
+    const canonicalMap = new Map(
+      relayModelIds.map((id) => [id.toLowerCase(), id]),
+    );
+
+    return [...new Set(candidates.map((candidate) => {
+      const trimmed = String(candidate || '').trim();
+      if (!trimmed) return '';
+      return canonicalMap.get(trimmed.toLowerCase()) || trimmed;
+    }).filter(Boolean))];
+  }
+
+  function scoreModelCandidate(candidate, accountLike = {}) {
+    const normalized = candidate.toLowerCase();
+    const platform = String(accountLike.platform || '').trim().toLowerCase();
+    const accountId = String(accountLike.account_id || '').trim().toLowerCase();
+    let score = 0;
+
+    if (accountId) {
+      for (const part of accountId.split(/[^a-z0-9]+/i)) {
+        const hint = part.trim().toLowerCase();
+        if (!hint || hint.length < 2) continue;
+        if (normalized === hint) score += 150;
+        if (normalized.startsWith(`${hint}-`) || normalized.endsWith(`-${hint}`)) score += 120;
+        if (normalized.includes(hint)) score += 80;
+      }
+    }
+
+    if (platform === 'claude' && !normalized.startsWith('claude-')) score += 20;
+    if (normalized.includes('mimo')) score += 140;
+    if (normalized.includes('deepseek')) score += 70;
+    if (normalized.includes('v2.5')) score += 40;
+    if (normalized.includes('v2')) score += 15;
+    if (normalized.includes('pro')) score += 28;
+    if (normalized.includes('omni')) score += 12;
+    if (normalized.includes('flash')) score -= 10;
+    if (normalized.includes('mini') || normalized.includes('lite')) score -= 16;
+    if (normalized.includes('tts')) score -= 120;
+    if (normalized.includes('voice')) score -= 120;
+    if (normalized.includes('audio')) score -= 80;
+    if (normalized.includes('speech')) score -= 80;
+    if (normalized.includes('embedding') || normalized.includes('embed')) score -= 100;
+    if (normalized.includes('rerank')) score -= 100;
+    if (normalized.includes('image')) score -= 90;
+    if (normalized.includes('sonnet')) score -= 5;
+    if (normalized.includes('haiku')) score -= 8;
+    if (normalized.includes('opus')) score -= 10;
+
+    return score;
+  }
+
+  async function resolveApiModelSelection(rawValue, accountLike = {}, existingOptions = []) {
+    const trimmed = String(rawValue || '').trim();
+    if (!trimmed) {
+      return {
+        api_model: '',
+        api_model_options: [],
+      };
+    }
+
+    const relayModelIds = await fetchRelayModelIds(accountLike);
+    const candidates = canonicalizeCandidatesByRelay(splitModelCandidates(trimmed), relayModelIds);
+    const normalizedFallbackOptions = canonicalizeCandidatesByRelay(parseStoredModelOptions(existingOptions), relayModelIds);
+    if (candidates.length <= 1) {
+      const singleModel = candidates[0] || trimmed;
+      const nextOptions = normalizedFallbackOptions.includes(singleModel)
+        ? normalizedFallbackOptions
+        : [];
+      return {
+        api_model: singleModel,
+        api_model_options: nextOptions,
+      };
+    }
+
+    const selected = candidates
+      .map((candidate, index) => ({
+        candidate,
+        index,
+        score: scoreModelCandidate(candidate, accountLike),
+      }))
+      .sort((a, b) => (b.score - a.score) || (a.index - b.index))[0]?.candidate || trimmed;
+
+    return {
+      api_model: selected,
+      api_model_options: candidates,
+    };
+  }
+
   function buildClaudeLocalAccountSnapshot({ settings, matrixState }) {
     const env = getClaudeEnv(settings);
     const apiKey = String(env.ANTHROPIC_AUTH_TOKEN || '').trim();
     const apiBaseUrl = normalizeClaudeBaseUrl(env.ANTHROPIC_BASE_URL || '');
-    const apiModel = String(env.ANTHROPIC_MODEL || '').trim();
+    const apiModel = resolveClaudeApiModel(env);
     const email = String(matrixState?.email || '').trim().toLowerCase();
     const currentAccountId = String(matrixState?.mode === 'api' ? (matrixState?.account_id || '') : '').trim();
 
@@ -163,6 +342,8 @@ export function createAccountsService({
 
   async function ensureRuntimeAccountsSynced() {
     const runtimeAccount = await buildRuntimeAccountSnapshot();
+    const runtimeMode = await getSelectedRuntimeMode();
+    const settingsColumn = getModeCurrentAccountColumn(runtimeMode);
     const [rows] = await pool.query('SELECT * FROM accounts ORDER BY is_current DESC, account_id ASC');
 
     if (!runtimeAccount) {
@@ -203,6 +384,7 @@ export function createAccountsService({
           matched.id,
         ],
       );
+      await pool.execute(`UPDATE settings SET ${settingsColumn} = ?, updated_at = NOW() WHERE id = 1`, [matched.id]);
     } else {
       const id = crypto.randomUUID();
       await pool.execute(
@@ -225,6 +407,7 @@ export function createAccountsService({
           runtimeAccount.status,
         ],
       );
+      await pool.execute(`UPDATE settings SET ${settingsColumn} = ?, updated_at = NOW() WHERE id = 1`, [id]);
     }
 
     const [nextRows] = await pool.query('SELECT * FROM accounts ORDER BY is_current DESC, account_id ASC');
@@ -303,6 +486,15 @@ export function createAccountsService({
       const id = crypto.randomUUID();
       const platform = body.platform || 'gpt';
       const providerMode = body.provider_mode === 'api' ? 'api' : 'oauth';
+      const normalizedBaseUrl = platform === 'claude'
+        ? normalizeClaudeBaseUrl(body.api_base_url || '')
+        : String(body.api_base_url || '').trim();
+      const modelSelection = await resolveApiModelSelection(body.api_model || '', {
+        account_id: body.account_id,
+        platform,
+        api_base_url: normalizedBaseUrl,
+        api_key: body.api_key || '',
+      });
       const nextApiCliConfig = providerMode === 'api'
         ? validateApiCliConfigSnippet(body.api_cli_config || '')
         : sanitizeApiCliConfigSnippet(body.api_cli_config || '');
@@ -311,20 +503,20 @@ export function createAccountsService({
         await validateCodexApiConfig({
           account_id: body.account_id,
           email: body.email || '',
-          api_base_url: body.api_base_url || '',
+          api_base_url: normalizedBaseUrl,
           api_key: body.api_key || '',
-          api_model: body.api_model || '',
+          api_model: modelSelection.api_model,
           api_cli_config: nextApiCliConfig,
         });
       }
 
       await pool.execute(
         `INSERT INTO accounts (
-          id, account_id, email, auth_type, auth_file_path, provider_mode, api_base_url, api_key, api_model, api_cli_config, platform, status, is_current,
+          id, account_id, email, auth_type, auth_file_path, provider_mode, api_base_url, api_key, api_model, api_model_options, api_cli_config, platform, status, is_current,
           last_login_at, total_tasks_completed, success_rate, session_start_at,
           total_session_seconds, requests_this_minute, tokens_used_percent,
           last_request_at, uptime_percent, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'idle', FALSE, NOW(), 0, 100, NOW(), 0, 0, 0, NOW(), 100, NOW(), NOW())`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'idle', FALSE, NOW(), 0, 100, NOW(), 0, 0, 0, NOW(), 100, NOW(), NOW())`,
         [
           id,
           body.account_id,
@@ -332,9 +524,10 @@ export function createAccountsService({
           body.auth_type,
           body.auth_file_path || '',
           providerMode,
-          body.api_base_url || '',
+          normalizedBaseUrl,
           body.api_key || '',
-          body.api_model || '',
+          modelSelection.api_model,
+          modelSelection.api_model_options.length > 0 ? JSON.stringify(modelSelection.api_model_options) : null,
           nextApiCliConfig,
           platform,
         ],
@@ -361,16 +554,28 @@ export function createAccountsService({
       }
 
       const nextApiKey = String(body.api_key || '').trim() || String(existing.api_key || '').trim();
+      const nextPlatform = body.platform || existing.platform || 'gpt';
+      const nextApiBaseUrl = nextPlatform === 'claude'
+        ? normalizeClaudeBaseUrl(String(body.api_base_url || existing.api_base_url || '').trim())
+        : String(body.api_base_url || existing.api_base_url || '').trim();
+      const modelSelection = await resolveApiModelSelection(body.api_model || '', {
+        account_id: String(body.account_id || existing.account_id || '').trim(),
+        platform: nextPlatform,
+        api_base_url: nextApiBaseUrl,
+        api_key: nextApiKey,
+      }, existing.api_model_options);
+
       const nextAccount = {
         ...existing,
         account_id: String(body.account_id || '').trim(),
         email: String(body.email || '').trim(),
         auth_type: body.auth_type || existing.auth_type,
-        api_base_url: String(body.api_base_url || '').trim(),
+        api_base_url: nextApiBaseUrl,
         api_key: nextApiKey,
-        api_model: String(body.api_model || '').trim(),
+        api_model: modelSelection.api_model,
+        api_model_options: modelSelection.api_model_options,
         api_cli_config: validateApiCliConfigSnippet(body.api_cli_config || ''),
-        platform: body.platform || existing.platform || 'gpt',
+        platform: nextPlatform,
       };
 
       if (!nextAccount.account_id || !nextAccount.api_base_url || !nextAccount.api_key) {
@@ -383,7 +588,7 @@ export function createAccountsService({
 
       await pool.execute(
         `UPDATE accounts
-         SET account_id = ?, email = ?, auth_type = ?, api_base_url = ?, api_key = ?, api_model = ?, api_cli_config = ?, platform = ?, updated_at = NOW()
+         SET account_id = ?, email = ?, auth_type = ?, api_base_url = ?, api_key = ?, api_model = ?, api_model_options = ?, api_cli_config = ?, platform = ?, updated_at = NOW()
          WHERE id = ?`,
         [
           nextAccount.account_id,
@@ -392,6 +597,7 @@ export function createAccountsService({
           nextAccount.api_base_url,
           nextAccount.api_key,
           nextAccount.api_model,
+          nextAccount.api_model_options.length > 0 ? JSON.stringify(nextAccount.api_model_options) : null,
           nextAccount.api_cli_config,
           nextAccount.platform,
           id,
@@ -403,6 +609,65 @@ export function createAccountsService({
         await createLog({ accountId: id, message: '[API] 已同步更新中转站账号配置' });
       } else {
         await createLog({ accountId: id, message: `[API] 已更新中转站账号 ${nextAccount.account_id}` });
+      }
+
+      const [rows] = await pool.execute('SELECT * FROM accounts WHERE id = ?', [id]);
+      return mapAccount(rows[0]);
+    },
+
+    async updateApiAccountModel(id, api_model) {
+      const [targetRows] = await pool.execute('SELECT * FROM accounts WHERE id = ?', [id]);
+      if (!targetRows.length) {
+        const error = new Error('账号不存在');
+        error.status = 404;
+        throw error;
+      }
+
+      const existing = targetRows[0];
+      if (!isApiAccount(existing)) {
+        const error = new Error('仅 API 账号支持切换模型');
+        error.status = 400;
+        throw error;
+      }
+
+      const modelSelection = await resolveApiModelSelection(api_model || '', {
+        account_id: existing.account_id,
+        platform: existing.platform || 'gpt',
+        api_base_url: existing.api_base_url || '',
+        api_key: existing.api_key || '',
+      }, existing.api_model_options);
+      const nextModel = String(modelSelection.api_model || '').trim();
+      if (!nextModel) {
+        const error = new Error('模型不能为空');
+        error.status = 400;
+        throw error;
+      }
+
+      const nextOptions = modelSelection.api_model_options.length > 0
+        ? modelSelection.api_model_options
+        : canonicalizeCandidatesByRelay(
+          parseStoredModelOptions(existing.api_model_options),
+          await fetchRelayModelIds({
+            account_id: existing.account_id,
+            platform: existing.platform || 'gpt',
+            api_base_url: existing.api_base_url || '',
+            api_key: existing.api_key || '',
+          }),
+        );
+      if (!nextOptions.includes(nextModel)) {
+        nextOptions.push(nextModel);
+      }
+
+      await pool.execute(
+        'UPDATE accounts SET api_model = ?, api_model_options = ?, updated_at = NOW() WHERE id = ?',
+        [nextModel, nextOptions.length > 0 ? JSON.stringify(nextOptions) : null, id],
+      );
+
+      if (existing.is_current) {
+        await activateApiProviderForCurrentMode({ ...existing, id, api_model: nextModel, api_model_options: nextOptions });
+        await createLog({ accountId: id, message: `[API] 已切换模型至 ${nextModel}` });
+      } else {
+        await createLog({ accountId: id, message: `[API] 已保存模型 ${nextModel}` });
       }
 
       const [rows] = await pool.execute('SELECT * FROM accounts WHERE id = ?', [id]);
