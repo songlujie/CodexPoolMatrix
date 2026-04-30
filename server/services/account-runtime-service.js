@@ -10,6 +10,7 @@ export function createAccountRuntimeService({
   decodeJwtPayload,
   setExpectedAccountId,
   reloadOpenClaw,
+  syncOpenClawApiAccount,
   requestJson,
   normalizeApiBaseUrl,
   buildRelayUrl,
@@ -25,6 +26,24 @@ export function createAccountRuntimeService({
   async function applyAccountToRuntime(nextAccount, runtimeMode) {
     if (isApiAccount(nextAccount)) {
       await activateApiProviderForMode(nextAccount, runtimeMode);
+      const openclawSyncResult = syncOpenClawApiAccount
+        ? await syncOpenClawApiAccount(nextAccount)
+        : null;
+      if (openclawSyncResult?.ok) {
+        const reloadResult = await reloadOpenClaw();
+        if (reloadResult.ok) {
+          await createLog({
+            accountId: nextAccount.id,
+            message: `[OpenClaw] 已同步 MiMo API 配置并重载 (${reloadResult.method})`,
+          });
+        } else {
+          await createLog({
+            accountId: nextAccount.id,
+            level: 'warn',
+            message: `[OpenClaw] 已同步 MiMo API 配置，但重载失败: ${reloadResult.reason}`,
+          });
+        }
+      }
       await createLog({
         accountId: nextAccount.id,
         message: `[${runtimeMode === 'claude' ? 'Claude' : 'Codex'}] 已切换默认中转站至 ${nextAccount.account_id}`,

@@ -3,7 +3,7 @@ import path from 'node:path';
 import mysql from 'mysql2/promise';
 import { config } from './config.js';
 import { isSqlite, pool } from './db.js';
-import { createSeedAccounts, createSeedTasks, createSeedLogs, defaultSettings } from './seed-data.js';
+import { createSeedAccounts, createSeedLogs, defaultSettings } from './seed-data.js';
 
 function shouldSeedSampleData() {
   const explicit = process.env.DB_SEED_SAMPLE_DATA?.trim().toLowerCase();
@@ -311,29 +311,6 @@ async function seedAccounts() {
         account.platform || 'gpt',
         account.created_at,
         account.updated_at,
-      ],
-    );
-  }
-
-  const tasks = createSeedTasks(accounts);
-  for (const task of tasks) {
-    await pool.execute(
-      `INSERT INTO tasks (
-        id, description, assigned_account_id, status, priority, result,
-        error_message, retry_count, created_at, started_at, completed_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        task.id,
-        task.description,
-        task.assigned_account_id,
-        task.status,
-        task.priority,
-        task.result,
-        task.error_message,
-        task.retry_count,
-        task.created_at,
-        task.started_at,
-        task.completed_at,
       ],
     );
   }

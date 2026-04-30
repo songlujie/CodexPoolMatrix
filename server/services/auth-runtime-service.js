@@ -22,6 +22,48 @@ export function createAuthRuntimeService({
 }) {
   const OPENCLAW_AUTH_PATH = path.join(os.homedir(), '.openclaw', 'agents', 'main', 'agent', 'auth-profiles.json');
   const OPENCLAW_CONFIG_PATH = path.join(os.homedir(), '.openclaw', 'openclaw.json');
+  const MIMO_OPENCLAW_MODELS = {
+    'mimo-v2.5-pro': {
+      id: 'mimo-v2.5-pro',
+      name: 'mimo-v2.5-pro',
+      reasoning: true,
+      input: ['text'],
+      contextWindow: 1048576,
+      maxTokens: 32000,
+    },
+    'mimo-v2.5': {
+      id: 'mimo-v2.5',
+      name: 'mimo-v2.5',
+      reasoning: true,
+      input: ['text', 'image'],
+      contextWindow: 262144,
+      maxTokens: 32000,
+    },
+    'mimo-v2-pro': {
+      id: 'mimo-v2-pro',
+      name: 'mimo-v2-pro',
+      reasoning: true,
+      input: ['text'],
+      contextWindow: 1048576,
+      maxTokens: 32000,
+    },
+    'mimo-v2-omni': {
+      id: 'mimo-v2-omni',
+      name: 'mimo-v2-omni',
+      reasoning: true,
+      input: ['text', 'image'],
+      contextWindow: 262144,
+      maxTokens: 32000,
+    },
+    'mimo-v2-flash': {
+      id: 'mimo-v2-flash',
+      name: 'mimo-v2-flash',
+      reasoning: false,
+      input: ['text'],
+      contextWindow: 262144,
+      maxTokens: 32000,
+    },
+  };
 
   let loginSession = {
     status: 'idle',
@@ -223,6 +265,202 @@ export function createAuthRuntimeService({
     } catch {
       return false;
     }
+  }
+
+  function parseJsonObject(value) {
+    return value && typeof value === 'object' && !Array.isArray(value) ? { ...value } : {};
+  }
+
+  function parseAccountModelOptions(account = {}) {
+    if (Array.isArray(account.api_model_options)) {
+      return [...new Set(account.api_model_options.map((item) => String(item || '').trim()).filter(Boolean))];
+    }
+
+    const rawValue = String(account.api_model_options || '').trim();
+    if (!rawValue) {
+      return [];
+    }
+
+    try {
+      const parsed = JSON.parse(rawValue);
+      if (Array.isArray(parsed)) {
+        return [...new Set(parsed.map((item) => String(item || '').trim()).filter(Boolean))];
+      }
+    } catch {
+      // ignore invalid stored options
+    }
+
+    return [...new Set(
+      rawValue
+        .split(/[、，,\n\r;；|]+/g)
+        .map((item) => item.trim())
+        .filter(Boolean),
+    )];
+  }
+
+  function isMiMoOpenClawAccount(account = {}) {
+    try {
+      const baseUrl = String(account.api_base_url || '').trim();
+      if (!baseUrl) return false;
+      const hostname = new URL(baseUrl).hostname.toLowerCase();
+      return hostname === 'api.xiaomimimo.com' || hostname === 'token-plan-cn.xiaomimimo.com';
+    } catch {
+      return false;
+    }
+  }
+
+  function normalizeOpenClawProviderBaseUrl(baseUrl = '') {
+    const trimmed = String(baseUrl || '').trim().replace(/\/+$/, '');
+    if (!trimmed) return '';
+
+    try {
+      const parsed = new URL(trimmed);
+      const hostname = parsed.hostname.toLowerCase();
+      const pathname = parsed.pathname.replace(/\/+$/, '');
+      if (hostname === 'api.xiaomimimo.com' || hostname === 'token-plan-cn.xiaomimimo.com') {
+        if (!pathname || pathname === '/anthropic' || pathname === '/anthropic/v1' || pathname === '/anthropic/v1/messages') {
+          return `${parsed.origin}/v1`;
+        }
+        if (pathname === '/v1' || pathname === '/v1/chat/completions') {
+          return `${parsed.origin}/v1`;
+        }
+      }
+    } catch {
+      return trimmed;
+    }
+
+    return trimmed;
+  }
+
+  function buildOpenClawMiMoProviderName(account = {}) {
+    try {
+      const hostname = new URL(String(account.api_base_url || '').trim()).hostname.toLowerCase();
+      return hostname === 'token-plan-cn.xiaomimimo.com' ? 'xiaomi-coding' : 'xiaomi';
+    } catch {
+      return 'xiaomi';
+    }
+  }
+
+  function isLikelyChatModel(modelId = '') {
+    const normalized = String(modelId || '').trim().toLowerCase();
+    if (!normalized) return false;
+    return !(
+      normalized.includes('tts')
+      || normalized.includes('voice')
+      || normalized.includes('audio')
+      || normalized.includes('speech')
+      || normalized.includes('embedding')
+      || normalized.includes('embed')
+      || normalized.includes('rerank')
+      || normalized.includes('image')
+    );
+  }
+
+  function buildOpenClawMiMoModels(account = {}) {
+    const selectedModel = String(account.api_model || '').trim().toLowerCase();
+    const candidates = [...new Set([
+      selectedModel,
+      ...parseAccountModelOptions(account).map((item) => String(item || '').trim().toLowerCase()),
+      ...Object.keys(MIMO_OPENCLAW_MODELS),
+    ].filter(Boolean))];
+
+    const models = candidates
+      .filter(isLikelyChatModel)
+      .map((modelId) => MIMO_OPENCLAW_MODELS[modelId] || {
+        id: modelId,
+        name: modelId,
+        reasoning: !modelId.includes('flash'),
+        input: modelId.includes('omni') || modelId === 'mimo-v2.5' ? ['text', 'image'] : ['text'],
+        contextWindow: modelId.includes('2.5-pro') || modelId.includes('v2-pro') ? 1048576 : 262144,
+        maxTokens: 32000,
+      });
+
+    return [...new Map(models.map((item) => [item.id, item])).values()];
+  }
+
+  async function readOpenClawConfig() {
+    try {
+      const raw = await fs.readFile(OPENCLAW_CONFIG_PATH, 'utf8');
+      return parseJsonObject(JSON.parse(raw));
+    } catch (error) {
+      if (error?.code === 'ENOENT') {
+        return {};
+      }
+      throw error;
+    }
+  }
+
+  async function writeOpenClawConfig(config) {
+    await fs.mkdir(path.dirname(OPENCLAW_CONFIG_PATH), { recursive: true });
+    await fs.writeFile(OPENCLAW_CONFIG_PATH, `${JSON.stringify(config, null, 2)}\n`);
+  }
+
+  async function syncOpenClawApiAccount(account) {
+    if (!isMiMoOpenClawAccount(account)) {
+      return { ok: false, reason: '当前 API 账号不是 Xiaomi MiMo 中转站，暂不自动写入 OpenClaw 配置' };
+    }
+
+    const apiKey = String(account.api_key || '').trim();
+    const apiModel = String(account.api_model || '').trim().toLowerCase();
+    const baseUrl = normalizeOpenClawProviderBaseUrl(account.api_base_url);
+    if (!apiKey) return { ok: false, reason: '当前 API 账号缺少 API Key' };
+    if (!baseUrl) return { ok: false, reason: '当前 API 账号缺少 Base URL' };
+    if (!apiModel) return { ok: false, reason: '当前 API 账号缺少模型名' };
+
+    const providerName = buildOpenClawMiMoProviderName(account);
+    const models = buildOpenClawMiMoModels(account);
+    const primaryModel = models.some((item) => item.id === apiModel)
+      ? apiModel
+      : models[0]?.id || apiModel;
+
+    const currentConfig = await readOpenClawConfig();
+    const nextConfig = parseJsonObject(currentConfig);
+    nextConfig.models = parseJsonObject(nextConfig.models);
+    nextConfig.models.mode = 'merge';
+    nextConfig.models.providers = parseJsonObject(nextConfig.models.providers);
+    nextConfig.models.providers[providerName] = {
+      baseUrl,
+      apiKey,
+      api: 'openai-completions',
+      models,
+    };
+
+    nextConfig.agents = parseJsonObject(nextConfig.agents);
+    nextConfig.agents.defaults = parseJsonObject(nextConfig.agents.defaults);
+    nextConfig.agents.defaults.model = parseJsonObject(nextConfig.agents.defaults.model);
+    nextConfig.agents.defaults.model.primary = `${providerName}/${primaryModel}`;
+    nextConfig.agents.defaults.models = parseJsonObject(nextConfig.agents.defaults.models);
+    for (const model of models) {
+      nextConfig.agents.defaults.models[`${providerName}/${model.id}`] = parseJsonObject(
+        nextConfig.agents.defaults.models[`${providerName}/${model.id}`],
+      );
+    }
+
+    if (providerName === 'xiaomi') {
+      nextConfig.auth = parseJsonObject(nextConfig.auth);
+      nextConfig.auth.profiles = parseJsonObject(nextConfig.auth.profiles);
+      nextConfig.auth.profiles['xiaomi:default'] = {
+        provider: 'xiaomi',
+        mode: 'api_key',
+      };
+    } else if (nextConfig.auth && typeof nextConfig.auth === 'object' && !Array.isArray(nextConfig.auth)) {
+      const nextProfiles = parseJsonObject(nextConfig.auth.profiles);
+      delete nextProfiles['xiaomi:default'];
+      if (Object.keys(nextProfiles).length > 0) {
+        nextConfig.auth = { ...nextConfig.auth, profiles: nextProfiles };
+      } else {
+        delete nextConfig.auth;
+      }
+    }
+
+    await writeOpenClawConfig(nextConfig);
+    return {
+      ok: true,
+      provider: providerName,
+      baseUrl,
+      primaryModel,
+      modelCount: models.length,
+    };
   }
 
   async function saveAuthFileToAccounts(authFilePath, originalFileName = path.basename(authFilePath)) {
@@ -714,6 +952,7 @@ export function createAuthRuntimeService({
 
   return {
     syncOpenClawAuth,
+    syncOpenClawApiAccount,
     switchAuthFile,
     refreshTokenForAuthFile,
     reloadOpenClaw,

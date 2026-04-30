@@ -1239,6 +1239,7 @@ const accountRuntimeService = createAccountRuntimeService({
   decodeJwtPayload,
   setExpectedAccountId,
   reloadOpenClaw: authRuntimeService.reloadOpenClaw,
+  syncOpenClawApiAccount: authRuntimeService.syncOpenClawApiAccount,
   requestJson,
   normalizeApiBaseUrl,
   buildRelayUrl,
@@ -1630,9 +1631,14 @@ app.post('/api/actions/refresh-all-tokens', asyncHandler(async (_req, res) => {
 app.post('/api/actions/restart-openclaw', asyncHandler(async (_req, res) => {
   // 先确保 auth-profiles.json 是最新的
   const [activeRows] = await pool.query("SELECT * FROM accounts WHERE is_current = TRUE LIMIT 1");
-  if (activeRows.length && !isApiAccount(activeRows[0])) {
-    const authFilePath = expandPath(activeRows[0].auth_file_path);
-    await authRuntimeService.syncOpenClawAuth(authFilePath);
+  let syncResult = null;
+  if (activeRows.length) {
+    if (isApiAccount(activeRows[0])) {
+      syncResult = await authRuntimeService.syncOpenClawApiAccount(activeRows[0]);
+    } else {
+      const authFilePath = expandPath(activeRows[0].auth_file_path);
+      syncResult = await authRuntimeService.syncOpenClawAuth(authFilePath);
+    }
   }
 
   const result = await authRuntimeService.reloadOpenClaw();
@@ -1640,7 +1646,7 @@ app.post('/api/actions/restart-openclaw', asyncHandler(async (_req, res) => {
     level: result.ok ? 'info' : 'warn',
     message: `[OpenClaw] 手动重载: ${result.ok ? result.method : result.reason}`,
   });
-  res.json(result);
+  res.json({ ...result, sync: syncResult });
 }));
 
 // ─────────────────────────────────────────────
