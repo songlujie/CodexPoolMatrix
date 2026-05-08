@@ -22,6 +22,7 @@ interface AccountCardProps {
   onReset: (id: string) => void;
   onRemove: (id: string) => Promise<void>;
   onEditApiAccount?: (account: Account) => void;
+  onCloneApiAccount?: (account: Account) => void;
   onAccountUpdated?: () => void;
   refreshKey?: number;
   viewMode?: 'grid' | 'list';
@@ -30,8 +31,25 @@ interface AccountCardProps {
 }
 
 type AuthInfo = Awaited<ReturnType<typeof api.getAccountAuthInfo>>;
+type AccountAlertTone = 'danger' | 'warning' | 'info';
 
-export function AccountCard({ account, onSetActive, onPause, onReset, onRemove, onEditApiAccount, onAccountUpdated, refreshKey, viewMode = 'grid', externalUsage, onUsageUpdate }: AccountCardProps) {
+interface AccountAlertItem {
+  key: string;
+  tone: AccountAlertTone;
+  message: string;
+  actions?: Array<{
+    key: string;
+    label: string;
+    onClick: () => void;
+  }>;
+}
+
+interface AccountActionFeedback {
+  tone: AccountAlertTone;
+  message: string;
+}
+
+export function AccountCard({ account, onSetActive, onPause, onReset, onRemove, onEditApiAccount, onCloneApiAccount, onAccountUpdated, refreshKey, viewMode = 'grid', externalUsage, onUsageUpdate }: AccountCardProps) {
   const sb = statusBadge[account.status];
   const { t, dateLocale } = useI18n();
   const isApiAccount = account.provider_mode === 'api';
@@ -56,6 +74,7 @@ export function AccountCard({ account, onSetActive, onPause, onReset, onRemove, 
   const [previewLoading, setPreviewLoading] = useState(false);
   const [selectedApiModel, setSelectedApiModel] = useState('');
   const [savingApiModel, setSavingApiModel] = useState(false);
+  const [actionFeedback, setActionFeedback] = useState<AccountActionFeedback | null>(null);
   const didAutoRefreshRef = useRef(false);
   const cliConfigSummarySource = account.api_cli_config || authInfo?.api_cli_config || '';
   const cliConfigLineCount = cliConfigSummarySource
@@ -142,6 +161,7 @@ export function AccountCard({ account, onSetActive, onPause, onReset, onRemove, 
   // OAuth 账号做可用性+用量刷新，API 账号做中转站连通性检测
   const handleRefreshLiveUsage = useCallback(async (options?: { silent?: boolean }) => {
     const silent = options?.silent ?? false;
+    setActionFeedback(null);
     setFetchingLive(true);
     setCheckingUsage(true);
     setUsageResult(null);
@@ -163,6 +183,7 @@ export function AccountCard({ account, onSetActive, onPause, onReset, onRemove, 
           if (!silent) {
             toast.success(`${account.account_id} ${t('card.apiRelayOk')}`);
           }
+          setActionFeedback({ tone: 'info', message: t('card.feedback.relayChecked') });
         } else {
           const usage: LiveUsageData = {
             ok: true,
@@ -176,6 +197,10 @@ export function AccountCard({ account, onSetActive, onPause, onReset, onRemove, 
           if (!silent) {
             toast.success(`${account.account_id} ${t('card.codexAvailable')} (5h=${result.primary?.used_percent ?? '?'}%)`);
           }
+          setActionFeedback({
+            tone: 'info',
+            message: t('card.feedback.usageChecked', { percent: result.primary?.used_percent?.toFixed(0) ?? '?' }),
+          });
         }
       } else if (result.rate_limited) {
         if (result.primary || result.secondary) {
@@ -191,19 +216,23 @@ export function AccountCard({ account, onSetActive, onPause, onReset, onRemove, 
         if (!silent) {
           toast.warning(`${account.account_id} ${t('card.codexRateLimited')}`);
         }
+        setActionFeedback({ tone: 'warning', message: t('card.codexRateLimited') });
       } else if (result.status === 401) {
         if (!silent) {
           toast.error(`${account.account_id} ${t('card.tokenInvalid')}`);
         }
+        setActionFeedback({ tone: 'danger', message: t('card.tokenInvalid') });
       } else {
         if (!silent) {
           toast.error(`${account.account_id}: ${formatUsageError(result.error)}`);
         }
+        setActionFeedback({ tone: 'danger', message: formatUsageError(result.error) });
       }
     } catch {
       if (!silent) {
         toast.error(t('card.checkFailed'));
       }
+      setActionFeedback({ tone: 'danger', message: t('card.checkFailed') });
     } finally {
       setFetchingLive(false);
       setCheckingUsage(false);
@@ -248,13 +277,17 @@ export function AccountCard({ account, onSetActive, onPause, onReset, onRemove, 
     }
 
     setSavingApiModel(true);
+    setActionFeedback(null);
     try {
       const updated = await api.updateApiAccountModel(account.id, nextModel);
       setSelectedApiModel(String(updated.api_model || '').trim());
       toast.success(t('card.apiModelUpdated', { model: updated.api_model || nextModel }));
+      setActionFeedback({ tone: 'info', message: t('card.feedback.apiModelUpdated', { model: updated.api_model || nextModel }) });
       onAccountUpdated?.();
     } catch (error) {
-      toast.error(formatUsageError(error instanceof Error ? error.message : undefined));
+      const message = formatUsageError(error instanceof Error ? error.message : undefined);
+      toast.error(message);
+      setActionFeedback({ tone: 'danger', message });
     } finally {
       setSavingApiModel(false);
     }
@@ -290,13 +323,17 @@ export function AccountCard({ account, onSetActive, onPause, onReset, onRemove, 
 
   const handleSaveApiCliConfig = async () => {
     setSavingCliConfig(true);
+    setActionFeedback(null);
     try {
       await api.updateApiCliConfig(account.id, cliConfigValue);
       await fetchAuthInfo();
       setCliConfigOpen(false);
       toast.success(t('card.apiCliConfigSaved'));
+      setActionFeedback({ tone: 'info', message: t('card.feedback.cliConfigSaved') });
     } catch (error) {
-      toast.error((error as Error)?.message || t('card.apiCliConfigSaveFailed'));
+      const message = (error as Error)?.message || t('card.apiCliConfigSaveFailed');
+      toast.error(message);
+      setActionFeedback({ tone: 'danger', message });
     } finally {
       setSavingCliConfig(false);
     }
@@ -324,20 +361,152 @@ export function AccountCard({ account, onSetActive, onPause, onReset, onRemove, 
     ? { label: t('card.provider.api'), className: 'bg-amber-500/10 text-amber-700 border-amber-500/25' }
     : { label: t('card.provider.oauth'), className: 'bg-sky-500/10 text-sky-700 border-sky-500/25' };
   const deleteDisabled = account.is_current;
+  const alertToneClass: Record<AccountAlertTone, string> = {
+    danger: 'border-destructive/20 bg-destructive/10 text-destructive',
+    warning: 'border-warning/20 bg-warning/10 text-warning',
+    info: 'border-info/20 bg-info/10 text-info',
+  };
   const handleRefreshToken = async () => {
     try {
+      setActionFeedback(null);
       toast.info(t('card.refreshTokenInProgress', { account: account.account_id }));
       const result = await api.refreshToken(account.id);
       if (result.ok) {
         toast.success(`${account.account_id} ${t('card.refreshTokenSuccess')}`);
         await fetchAuthInfo();
+        setActionFeedback({ tone: 'info', message: t('card.feedback.tokenRefreshed') });
       } else {
-        toast.error(t('card.refreshTokenReason', { reason: result.reason || t('common.none') }));
+        const message = t('card.refreshTokenReason', { reason: result.reason || t('common.none') });
+        toast.error(message);
+        setActionFeedback({ tone: 'danger', message });
       }
     } catch {
       toast.error(t('card.refreshTokenFailed'));
+      setActionFeedback({ tone: 'danger', message: t('card.refreshTokenFailed') });
     }
   };
+  const alertItems: AccountAlertItem[] = [];
+
+  if (account.status === 'error') {
+    alertItems.push({
+      key: 'status-error',
+      tone: 'danger',
+      message: t('card.errorWarning'),
+      actions: [
+        { key: 'check-availability', label: isApiAccount ? t('card.checkRelay') : t('card.checkAvailability'), onClick: () => void handleRefreshLiveUsage() },
+      ],
+    });
+  }
+  if (account.status === 'rate_limited') {
+    alertItems.push({
+      key: 'status-rate-limited',
+      tone: 'warning',
+      message: t('card.rateLimitWarning'),
+      actions: [
+        { key: 'recheck-rate', label: isApiAccount ? t('card.checkRelay') : t('card.checkAvailability'), onClick: () => void handleRefreshLiveUsage() },
+      ],
+    });
+  }
+  if (account.status === 'cooldown') {
+    alertItems.push({
+      key: 'status-cooldown',
+      tone: 'info',
+      message: t('card.cooldownWarning'),
+      actions: account.is_current ? [] : [
+        { key: 'set-active', label: t('card.menuSetActive'), onClick: () => onSetActive(account.id) },
+      ],
+    });
+  }
+
+  if (!isApiAccount && authInfo?.error === 'auth_file_not_found') {
+    alertItems.push({
+      key: 'auth-file-not-found',
+      tone: 'danger',
+      message: `${t('card.authNotFound')}${authInfo.path ? `: ${authInfo.path}` : ''}`,
+      actions: [
+        { key: 'check-auth-missing', label: t('card.checkAvailability'), onClick: () => void handleRefreshLiveUsage() },
+      ],
+    });
+  } else if (!isApiAccount && authInfo?.error) {
+    alertItems.push({
+      key: 'auth-read-fail',
+      tone: 'danger',
+      message: authInfo.path ? `${t('card.authReadFail')}: ${authInfo.path}` : t('card.authReadFail'),
+      actions: [
+        { key: 'refresh-token-auth', label: t('card.menuRefreshToken'), onClick: () => void handleRefreshToken() },
+      ],
+    });
+  }
+
+  if (usageResult?.rate_limited) {
+    alertItems.push({
+      key: 'usage-rate-limited',
+      tone: 'warning',
+      message: t('card.codexRateLimited'),
+      actions: [
+        { key: 'check-rate-limited', label: isApiAccount ? t('card.checkRelay') : t('card.checkAvailability'), onClick: () => void handleRefreshLiveUsage() },
+      ],
+    });
+  } else if (usageResult?.status === 401) {
+    alertItems.push({
+      key: 'usage-token-invalid',
+      tone: 'danger',
+      message: t('card.tokenInvalid'),
+      actions: isApiAccount
+        ? [{ key: 'edit-api-account-token', label: t('card.menuEditApiAccount'), onClick: () => onEditApiAccount?.(account) }]
+        : [{ key: 'refresh-token-invalid', label: t('card.menuRefreshToken'), onClick: () => void handleRefreshToken() }],
+    });
+  } else if (usageResult && !usageResult.ok) {
+    alertItems.push({
+      key: 'usage-check-failed',
+      tone: 'danger',
+      message: formatUsageError(usageResult.error),
+      actions: isApiAccount
+        ? [
+            { key: 'edit-api-account-failed', label: t('card.menuEditApiAccount'), onClick: () => onEditApiAccount?.(account) },
+            { key: 'edit-cli-config-failed', label: t('card.menuEditCliConfig'), onClick: () => setCliConfigOpen(true) },
+          ]
+        : [{ key: 'recheck-failed', label: t('card.checkAvailability'), onClick: () => void handleRefreshLiveUsage() }],
+    });
+  } else if (isApiAccount && usageResult?.ok && usageResult.model_listed === false) {
+    alertItems.push({
+      key: 'api-model-unlisted',
+      tone: 'warning',
+      message: t('card.apiModelUnlisted'),
+      actions: [
+        { key: 'edit-api-account-model', label: t('card.menuEditApiAccount'), onClick: () => onEditApiAccount?.(account) },
+        { key: 'edit-cli-config-model', label: t('card.menuEditCliConfig'), onClick: () => setCliConfigOpen(true) },
+      ],
+    });
+  }
+
+  if (!isApiAccount && liveUsage?.primary && liveUsage.primary.used_percent >= 80 && !usageResult?.rate_limited) {
+    alertItems.push({
+      key: 'usage-high',
+      tone: 'warning',
+      message: t('card.highUsageWarning', { percent: liveUsage.primary.used_percent.toFixed(0) }),
+      actions: [
+        { key: 'refresh-token-high-usage', label: t('card.menuRefreshToken'), onClick: () => void handleRefreshToken() },
+      ],
+    });
+  }
+
+  if (hasAuthFile && tokenExpiry?.color === 'text-destructive' && account.status !== 'error') {
+    alertItems.push({
+      key: 'token-expired',
+      tone: 'danger',
+      message: `${tokenExpiry.label}${t('card.tokenExpireWarning')}`,
+      actions: isApiAccount
+        ? [{ key: 'edit-api-account-expired', label: t('card.menuEditApiAccount'), onClick: () => onEditApiAccount?.(account) }]
+        : [{ key: 'refresh-token-expired', label: t('card.menuRefreshToken'), onClick: () => void handleRefreshToken() }],
+    });
+  }
+
+  const uniqueAlertItems = alertItems.filter((item, index, list) => list.findIndex((entry) => entry.message === item.message) === index);
+  const primaryAlert = uniqueAlertItems[0] ?? null;
+  const recommendedActions = uniqueAlertItems
+    .flatMap((item) => item.actions || [])
+    .filter((action, index, list) => list.findIndex((entry) => entry.key === action.key) === index);
   const renderMenuContent = () => (
     <DropdownMenuContent align="end" className="text-xs">
       <DropdownMenuItem onClick={() => onSetActive(account.id)}>{t('card.menuSetActive')}</DropdownMenuItem>
@@ -346,6 +515,7 @@ export function AccountCard({ account, onSetActive, onPause, onReset, onRemove, 
       {isApiAccount && (
         <>
           <DropdownMenuItem onClick={() => onEditApiAccount?.(account)}>{t('card.menuEditApiAccount')}</DropdownMenuItem>
+          <DropdownMenuItem onClick={() => onCloneApiAccount?.(account)}>{t('card.menuCloneApiAccount')}</DropdownMenuItem>
           <DropdownMenuItem onClick={() => setCliConfigOpen(true)}>{t('card.menuEditCliConfig')}</DropdownMenuItem>
         </>
       )}
@@ -413,6 +583,11 @@ export function AccountCard({ account, onSetActive, onPause, onReset, onRemove, 
             <Badge variant="outline" className={`text-[9px] h-4 px-1.5 shrink-0 ${statusBadge[account.status].className}`}>
               {statusBadge[account.status].label}
             </Badge>
+            {primaryAlert ? (
+              <Badge variant="outline" className={`hidden lg:inline-flex text-[9px] h-4 px-1.5 shrink-0 ${alertToneClass[primaryAlert.tone]}`}>
+                {primaryAlert.tone === 'danger' ? t('card.alertBadgeDanger') : primaryAlert.tone === 'warning' ? t('card.alertBadgeWarning') : t('card.alertBadgeInfo')}
+              </Badge>
+            ) : null}
           </div>
 
           {/* Email (masked) */}
@@ -781,6 +956,49 @@ export function AccountCard({ account, onSetActive, onPause, onReset, onRemove, 
         )}
       </div>
 
+      {uniqueAlertItems.length > 0 ? (
+        <div className="mb-3 space-y-2">
+          {uniqueAlertItems.map((item) => (
+            <div key={item.key} className={`rounded-md border px-3 py-2 text-[11px] ${alertToneClass[item.tone]}`}>
+              <div className="flex items-start gap-1.5">
+                <AlertCircle className="mt-0.5 h-3 w-3 shrink-0" />
+                <span>{item.message}</span>
+              </div>
+            </div>
+          ))}
+          {recommendedActions.length > 0 ? (
+            <div className="rounded-md border border-border/50 bg-muted/10 px-3 py-2">
+              <p className="mb-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{t('card.recommendedActions')}</p>
+              <div className="flex flex-wrap gap-2">
+                {recommendedActions.map((action) => (
+                  <Button
+                    key={action.key}
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-[10px]"
+                    onClick={action.onClick}
+                  >
+                    {action.label}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {actionFeedback ? (
+        <div className={`mb-3 rounded-md border px-3 py-2 text-[11px] ${alertToneClass[actionFeedback.tone]}`}>
+          <div className="flex items-start gap-1.5">
+            <CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0" />
+            <div>
+              <p className="font-medium">{t('card.feedback.title')}</p>
+              <p className="mt-1">{actionFeedback.message}</p>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {/* 上次请求 */}
       <div className="flex gap-3 text-[10px] text-muted-foreground mb-3">
         <Tooltip>
@@ -798,24 +1016,6 @@ export function AccountCard({ account, onSetActive, onPause, onReset, onRemove, 
           </Tooltip>
         )}
       </div>
-
-
-      {/* Warning Banners */}
-      {account.status === 'error' && (
-        <div className="mt-3 -mx-4 -mb-4 px-4 py-2 bg-destructive/10 border-t border-destructive/20 text-[11px] text-destructive">
-          {t('card.errorWarning')}
-        </div>
-      )}
-      {account.status === 'rate_limited' && (
-        <div className="mt-3 -mx-4 -mb-4 px-4 py-2 bg-warning/10 border-t border-warning/20 text-[11px] text-warning">
-          {t('card.rateLimitWarning')}
-        </div>
-      )}
-      {hasAuthFile && tokenExpiry?.color === 'text-destructive' && account.status !== 'error' && (
-        <div className="mt-3 -mx-4 -mb-4 px-4 py-2 bg-destructive/10 border-t border-destructive/20 text-[11px] text-destructive">
-          {tokenExpiry.label}{t('card.tokenExpireWarning')}
-        </div>
-      )}
       {cliConfigDialog}
     </motion.div>
   );

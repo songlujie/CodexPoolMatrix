@@ -23,6 +23,7 @@ export interface Account {
   auth_file_path: string;
   provider_mode?: ProviderMode;
   api_base_url?: string;
+  api_key?: string;
   api_model?: string;
   api_model_options?: string[];
   api_cli_config?: string;

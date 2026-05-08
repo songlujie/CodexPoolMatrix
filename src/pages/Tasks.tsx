@@ -12,7 +12,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { Plus, RefreshCw, RotateCw, XCircle } from 'lucide-react';
+import { CheckCheck, Plus, RefreshCw, RotateCcw, RotateCw, XCircle } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
@@ -31,6 +31,10 @@ const statusBadge: Record<TaskStatus, { labelKey: 'tasks.status.queued' | 'tasks
 const EMPTY_TASKS: Task[] = [];
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const;
 const TASKS_PAGE_STATE_KEY = 'cpm-tasks-page-state';
+const DEFAULT_STATUS_FILTER = 'all';
+const DEFAULT_PRIORITY_FILTER = 'all';
+const DEFAULT_ACCOUNT_FILTER = 'all';
+const DEFAULT_PAGE_SIZE = '25';
 
 interface PersistedTasksPageState {
   statusFilter: TaskStatus | 'all';
@@ -85,6 +89,14 @@ const Tasks = () => {
     refetchOnWindowFocus: false,
   });
   const tasks = tasksQuery.data ?? EMPTY_TASKS;
+  const statusCounts = {
+    all: tasks.length,
+    queued: tasks.filter((task) => task.status === 'queued').length,
+    running: tasks.filter((task) => task.status === 'running').length,
+    completed: tasks.filter((task) => task.status === 'completed').length,
+    failed: tasks.filter((task) => task.status === 'failed').length,
+    retrying: tasks.filter((task) => task.status === 'retrying').length,
+  };
   const filteredTasks = tasks.filter((task) => {
     if (statusFilter !== 'all' && task.status !== statusFilter) return false;
     if (priorityFilter !== 'all' && task.priority !== priorityFilter) return false;
@@ -106,8 +118,23 @@ const Tasks = () => {
   const totalPages = Math.max(1, Math.ceil(filteredTasks.length / numericPageSize));
   const safePage = Math.min(page, totalPages);
   const pagedTasks = filteredTasks.slice((safePage - 1) * numericPageSize, safePage * numericPageSize);
+  const filteredTaskIds = filteredTasks.map((task) => task.id);
   const visibleTaskIds = pagedTasks.map((task) => task.id);
   const allVisibleSelected = visibleTaskIds.length > 0 && visibleTaskIds.every((id) => selected.has(id));
+  const allFilteredSelected = filteredTaskIds.length > 0 && filteredTaskIds.every((id) => selected.has(id));
+  const selectedFilteredCount = filteredTaskIds.filter((id) => selected.has(id)).length;
+  const hasActiveFilters = statusFilter !== DEFAULT_STATUS_FILTER
+    || priorityFilter !== DEFAULT_PRIORITY_FILTER
+    || accountFilter !== DEFAULT_ACCOUNT_FILTER
+    || searchQuery.trim().length > 0
+    || pageSize !== DEFAULT_PAGE_SIZE;
+  const statusCards: Array<{ key: TaskStatus | 'all'; label: string; value: number }> = [
+    { key: 'all', label: t('tasks.status.all'), value: statusCounts.all },
+    { key: 'queued', label: t('tasks.status.queued'), value: statusCounts.queued },
+    { key: 'running', label: t('tasks.status.running'), value: statusCounts.running },
+    { key: 'failed', label: t('tasks.status.failed'), value: statusCounts.failed },
+    { key: 'completed', label: t('tasks.status.completed'), value: statusCounts.completed },
+  ];
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -148,6 +175,29 @@ const Tasks = () => {
       visibleTaskIds.forEach((id) => next.add(id));
     }
     setSelected(next);
+  };
+
+  const toggleSelectFiltered = () => {
+    const next = new Set(selected);
+    if (allFilteredSelected) {
+      filteredTaskIds.forEach((id) => next.delete(id));
+    } else {
+      filteredTaskIds.forEach((id) => next.add(id));
+    }
+    setSelected(next);
+  };
+
+  const resetFilters = () => {
+    setStatusFilter(DEFAULT_STATUS_FILTER);
+    setPriorityFilter(DEFAULT_PRIORITY_FILTER);
+    setAccountFilter(DEFAULT_ACCOUNT_FILTER);
+    setSearchQuery('');
+    setPageSize(DEFAULT_PAGE_SIZE);
+    setPage(1);
+  };
+
+  const clearSelection = () => {
+    setSelected(new Set());
   };
 
   const addTask = async () => {
@@ -200,6 +250,34 @@ const Tasks = () => {
 
   return (
     <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+      <div className="border-b border-border/50 bg-gradient-to-b from-background via-background to-secondary/10 px-4 py-2">
+        <div className="flex flex-wrap gap-2.5">
+          {statusCards.map((card) => (
+            <button
+              key={card.key}
+              type="button"
+              onClick={() => {
+                setStatusFilter(card.key);
+                setPage(1);
+              }}
+              className={`flex items-center gap-2 rounded-full border px-2.5 py-1 text-left transition-all duration-200 ${
+                statusFilter === card.key
+                  ? 'border-primary/40 bg-primary/10 text-primary'
+                  : 'border-border/60 bg-background/70 text-muted-foreground hover:border-border hover:bg-card hover:text-foreground'
+              }`}
+            >
+              <span className="text-[11px] font-medium">{card.label}</span>
+              <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums ${
+                statusFilter === card.key
+                  ? 'bg-primary/15 text-primary'
+                  : 'bg-secondary/70 text-foreground/80'
+              }`}>
+                {card.value}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
       <div className="flex items-center justify-between p-4 border-b border-border/50 gap-3 flex-wrap">
         <div>
           <div className="flex items-center gap-2">
@@ -228,6 +306,9 @@ const Tasks = () => {
               </Button>
               <Button variant="outline" size="sm" className="h-7 text-xs border-warning/30 text-warning" onClick={batchRetry}>
                 <RotateCw className="h-3 w-3 mr-1" />{t('tasks.retry')} ({selected.size})
+              </Button>
+              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={clearSelection}>
+                {t('tasks.clearSelection')}
               </Button>
             </>
           )}
@@ -328,6 +409,21 @@ const Tasks = () => {
           <Badge variant="outline" className="h-6 rounded-full px-2 text-[10px] font-normal">
             {t('tasks.filteredCount', { count: filteredTasks.length, total: tasks.length })}
           </Badge>
+          {selected.size > 0 ? (
+            <Badge variant="outline" className="h-6 rounded-full px-2 text-[10px] font-normal">
+              {t('tasks.selectedCount', { count: selected.size, filtered: selectedFilteredCount })}
+            </Badge>
+          ) : null}
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs"
+            onClick={toggleSelectFiltered}
+            disabled={filteredTaskIds.length === 0}
+          >
+            <CheckCheck className="h-3 w-3 mr-1" />
+            {allFilteredSelected ? t('tasks.unselectFiltered') : t('tasks.selectFiltered')}
+          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -335,8 +431,18 @@ const Tasks = () => {
             onClick={toggleSelectVisible}
             disabled={visibleTaskIds.length === 0}
           >
-            <RotateCw className="h-3 w-3 mr-1" />
+            <RotateCcw className="h-3 w-3 mr-1" />
             {allVisibleSelected ? t('tasks.unselectVisible') : t('tasks.selectVisible')}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs"
+            onClick={resetFilters}
+            disabled={!hasActiveFilters}
+          >
+            <RotateCcw className="h-3 w-3 mr-1" />
+            {t('tasks.resetFilters')}
           </Button>
         </div>
       </div>

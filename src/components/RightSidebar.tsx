@@ -4,6 +4,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { PoolSettings } from '@/types';
+import { type SettingsSaveStatus } from '@/hooks/use-editable-settings';
 import { PauseCircle, RefreshCcw, RotateCw, ShieldCheck, Zap, KeyRound, Loader2 } from 'lucide-react';
 import { useI18n } from '@/lib/i18n';
 
@@ -31,6 +32,8 @@ interface RightSidebarProps {
   onCheckAllUsage?: () => void;
   busyAction?: QuickActionKey | null;
   actionStatus?: QuickActionStatus | null;
+  settingsSaveStatus?: SettingsSaveStatus;
+  settingsLastSavedAt?: number | null;
 }
 
 export function RightSidebar({
@@ -44,6 +47,8 @@ export function RightSidebar({
   onCheckAllUsage,
   busyAction = null,
   actionStatus = null,
+  settingsSaveStatus = 'idle',
+  settingsLastSavedAt = null,
 }: RightSidebarProps) {
   const { t } = useI18n();
   const runtimePathLabel = settings.mode === 'claude' ? t('right.claudePath') : t('right.codexPath');
@@ -71,6 +76,27 @@ export function RightSidebar({
       : resolvedActionStatus.tone === 'running'
         ? 'text-info'
         : 'text-muted-foreground';
+  const settingsToneClass = settingsSaveStatus === 'error'
+    ? 'border-destructive/30 bg-destructive/5 text-destructive'
+    : settingsSaveStatus === 'saved'
+      ? 'border-primary/30 bg-primary/5 text-primary'
+      : settingsSaveStatus === 'saving'
+        ? 'border-info/30 bg-info/5 text-info'
+        : settingsSaveStatus === 'pending'
+          ? 'border-warning/30 bg-warning/5 text-warning'
+          : 'border-border/50 bg-secondary/20 text-muted-foreground';
+  const settingsStatusLabel = settingsSaveStatus === 'error'
+    ? t('common.saveFailed')
+    : settingsSaveStatus === 'saved'
+      ? t('common.saved')
+      : settingsSaveStatus === 'saving'
+        ? t('common.saving')
+        : settingsSaveStatus === 'pending'
+          ? t('common.unsavedChanges')
+          : t('common.noPendingChanges');
+  const settingsTimeLabel = settingsLastSavedAt
+    ? t('common.lastSavedAt', { time: new Date(settingsLastSavedAt).toLocaleTimeString() })
+    : null;
 
   const update = (partial: Partial<PoolSettings>) => {
     onSettingsChange({ ...settings, ...partial });
@@ -82,6 +108,14 @@ export function RightSidebar({
       {/* 快捷操作 */}
       <div className="p-4 border-b border-border/50 space-y-2">
         <h3 className="text-xs font-semibold text-foreground uppercase tracking-wider mb-3">{t('right.quickActions')}</h3>
+        <div className={`rounded-lg border px-3 py-2 ${settingsToneClass}`}>
+          <p className="text-[11px] font-medium text-foreground">{t('right.settingsSync')}</p>
+          <p className="mt-1 text-[11px] font-medium">{settingsStatusLabel}</p>
+          <p className="mt-1 text-[11px] leading-4 text-muted-foreground">{t('right.settingsSyncHint')}</p>
+          {settingsTimeLabel ? (
+            <p className="mt-1 text-[11px] leading-4 text-muted-foreground">{settingsTimeLabel}</p>
+          ) : null}
+        </div>
         <Button onClick={onRotateNow} disabled={hasRunningAction} className="w-full h-8 text-xs bg-primary hover:bg-primary/90 text-primary-foreground disabled:opacity-70">
           {busyAction === 'rotate' ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <RotateCw className="h-3.5 w-3.5 mr-1.5" />}
           {t('right.rotateNext')}

@@ -1,12 +1,13 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, nativeImage, shell } from 'electron';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const ROOT_DIR = path.resolve(__dirname, '..');
 const PRELOAD_PATH = path.join(ROOT_DIR, 'electron', 'preload.cjs');
+const APP_ICON_PATH = path.join(ROOT_DIR, 'build', 'icon.png');
 const SERVER_ENTRY_URL = pathToFileURL(path.join(ROOT_DIR, 'server', 'index.js')).href;
 const RENDERER_URL = process.env.ELECTRON_RENDERER_URL || null;
 const FRONTEND_INDEX_PATH = path.join(ROOT_DIR, 'dist', 'index.html');
@@ -20,6 +21,21 @@ const DEFAULT_WINDOW_STATE = {
 
 let mainWindow = null;
 let serverModulePromise = null;
+
+function configureAppIcon() {
+  if (!fs.existsSync(APP_ICON_PATH)) {
+    return;
+  }
+
+  const icon = nativeImage.createFromPath(APP_ICON_PATH);
+  if (icon.isEmpty()) {
+    return;
+  }
+
+  if (process.platform === 'darwin' && app.dock) {
+    app.dock.setIcon(icon);
+  }
+}
 
 function normalizeVersion(version) {
   return String(version || '')
@@ -197,6 +213,7 @@ async function createMainWindow() {
     title: 'CodexPoolMatrix',
     autoHideMenuBar: true,
     show: false,
+    icon: APP_ICON_PATH,
     webPreferences: {
       preload: PRELOAD_PATH,
       contextIsolation: true,
@@ -263,6 +280,7 @@ app.whenReady().then(async () => {
       applicationVersion: app.getVersion(),
       version: app.getVersion(),
     });
+    configureAppIcon();
 
     const gotLock = app.requestSingleInstanceLock();
     if (!gotLock) {

@@ -76,6 +76,7 @@ interface AccountGridProps {
   onAccountAdded: () => void;
   onAccountUpdated?: () => void;
   onClearAll: () => void;
+  onRefreshPool?: () => Promise<void>;
   onCheckAllUsage?: (accountIds?: string[]) => void;
   onPauseAccounts?: (accountIds: string[]) => void;
   batchActionsDisabled?: boolean;
@@ -91,6 +92,7 @@ export function AccountGrid({
   onAccountAdded,
   onAccountUpdated,
   onClearAll,
+  onRefreshPool,
   onCheckAllUsage,
   onPauseAccounts,
   batchActionsDisabled = false,
@@ -108,10 +110,12 @@ export function AccountGrid({
   const [search, setSearch] = useState(persistedFilters?.search ?? DEFAULT_ACCOUNT_GRID_FILTERS.search);
   const [viewMode, setViewMode] = useState<ViewMode>(persistedFilters?.viewMode ?? DEFAULT_ACCOUNT_GRID_FILTERS.viewMode);
   const [lastRefresh, setLastRefresh] = useState(new Date());
+  const [refreshing, setRefreshing] = useState(false);
   const [clearingAll, setClearingAll] = useState(false);
   const [addDialogRequested, setAddDialogRequested] = useState(false);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [editingApiAccount, setEditingApiAccount] = useState<Account | null>(null);
+  const [cloningApiAccount, setCloningApiAccount] = useState<Account | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const { t } = useI18n();
 
@@ -202,6 +206,11 @@ export function AccountGrid({
     }
     return a.account_id.localeCompare(b.account_id, 'zh-CN');
   });
+  const filteredCurrentCount = filtered.filter((account) => account.is_current).length;
+  const filteredAbnormalCount = filtered.filter((account) => ABNORMAL_STATUSES.has(account.status)).length;
+  const filteredApiCount = filtered.filter((account) => account.provider_mode === 'api').length;
+  const hasModeAccounts = modeAccounts.length > 0;
+  const showCombinedEmptyState = filtered.length === 0;
 
   const handleSetActive = (id: string) => {
     onAction('setActive', id);
@@ -262,7 +271,15 @@ export function AccountGrid({
   const handleEditApiAccount = useCallback((account: Account) => {
     setAddDialogRequested(true);
     setAddDialogOpen(false);
+    setCloningApiAccount(null);
     setEditingApiAccount(account);
+  }, []);
+
+  const handleCloneApiAccount = useCallback((account: Account) => {
+    setAddDialogRequested(true);
+    setAddDialogOpen(false);
+    setEditingApiAccount(null);
+    setCloningApiAccount(account);
   }, []);
 
   const handleResetFilters = () => {
@@ -273,6 +290,19 @@ export function AccountGrid({
     setSearch(DEFAULT_ACCOUNT_GRID_FILTERS.search);
     setViewMode(DEFAULT_ACCOUNT_GRID_FILTERS.viewMode);
     toast.info(t('toast.filtersReset'));
+  };
+
+  const handleRefreshPool = async () => {
+    setRefreshing(true);
+    try {
+      await onRefreshPool?.();
+      setLastRefresh(new Date());
+      toast.info(t('toast.poolRefreshed'));
+    } catch (error) {
+      toast.error(formatAppError(error, t('dashboard.error.refreshPoolFailed')));
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const scopeCards = [
@@ -321,6 +351,7 @@ export function AccountGrid({
 
   const handleOpenAddDialog = () => {
     setEditingApiAccount(null);
+    setCloningApiAccount(null);
     setAddDialogRequested(true);
     setAddDialogOpen(true);
   };
@@ -379,6 +410,9 @@ export function AccountGrid({
         activeCount={activeCount}
         totalCount={modeAccounts.length}
         filteredCount={filtered.length}
+        visibleCurrentCount={filteredCurrentCount}
+        visibleAbnormalCount={filteredAbnormalCount}
+        visibleApiCount={filteredApiCount}
         selectedPlatform={platformFilter}
         onPlatformChange={setPlatformFilter}
         providerFilter={providerFilter}
@@ -394,10 +428,11 @@ export function AccountGrid({
         onSearchChange={setSearch}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
-        onRefresh={() => { setLastRefresh(new Date()); toast.info(t('toast.poolRefreshed')); }}
+        onRefresh={handleRefreshPool}
         onResetFilters={handleResetFilters}
         hasActiveFilters={hasActiveFilters}
         lastRefresh={lastRefresh}
+        refreshing={refreshing}
         extraActions={
           modeAccounts.length > 0 ? (
             <div className="flex items-center gap-1">
@@ -445,11 +480,45 @@ export function AccountGrid({
           ? 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 auto-rows-max'
           : 'flex flex-col gap-1.5'
       }`}>
-        {filtered.length === 0 ? (
-          <div className="col-span-full grid place-items-center rounded-2xl border border-dashed border-border/60 bg-card/30 px-6 py-14 text-center">
-            <div>
-              <p className="text-sm font-medium text-foreground">{t('filter.emptyTitle')}</p>
-              <p className="mt-2 text-xs text-muted-foreground">{t('filter.emptyHint')}</p>
+        {showCombinedEmptyState ? (
+          <div className="col-span-full overflow-hidden rounded-[28px] border border-border/60 bg-gradient-to-br from-card via-card to-secondary/20">
+            <div className="flex min-h-[320px] items-center justify-center px-8 py-10 sm:px-10 lg:px-12">
+              <div className="flex max-w-2xl flex-col items-center text-center">
+                <button
+                  type="button"
+                  onClick={handleOpenAddDialog}
+                  onMouseEnter={() => setAddDialogRequested(true)}
+                  className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 text-primary shadow-sm transition-all hover:scale-[1.03] hover:bg-primary/15"
+                  title={t('card.addAccount')}
+                >
+                  <Plus className="h-8 w-8" />
+                </button>
+                <p className="mt-6 text-2xl font-semibold tracking-tight text-foreground">
+                  {hasModeAccounts ? t('filter.emptyTitle') : t('dashboard.empty.noAccountsTitle')}
+                </p>
+                <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
+                  {hasModeAccounts ? t('filter.emptyHint') : t('dashboard.empty.noAccountsHint')}
+                </p>
+                <p className="mt-4 text-xs font-medium text-primary">
+                  {t('card.addAccount')}
+                </p>
+                <div className="mt-6 flex flex-wrap items-center justify-center gap-2 text-[11px] text-muted-foreground">
+                  <span className="rounded-full border border-border/60 bg-background/70 px-3 py-1">
+                    {t('filter.visibleCurrent', { count: filteredCurrentCount })}
+                  </span>
+                  <span className="rounded-full border border-border/60 bg-background/70 px-3 py-1">
+                    {t('filter.visibleAbnormal', { count: filteredAbnormalCount })}
+                  </span>
+                  <span className="rounded-full border border-border/60 bg-background/70 px-3 py-1">
+                    {t('filter.visibleApi', { count: filteredApiCount })}
+                  </span>
+                </div>
+                {hasActiveFilters ? (
+                  <Button variant="outline" onClick={handleResetFilters} className="mt-6 h-10 text-sm">
+                    {t('filter.reset')}
+                  </Button>
+                ) : null}
+              </div>
             </div>
           </div>
         ) : null}
@@ -463,6 +532,7 @@ export function AccountGrid({
               onReset={handleReset}
               onRemove={handleRemove}
               onEditApiAccount={handleEditApiAccount}
+              onCloneApiAccount={handleCloneApiAccount}
               onAccountUpdated={onAccountUpdated}
               refreshKey={refreshKey}
               viewMode={viewMode}
@@ -473,14 +543,16 @@ export function AccountGrid({
         </AnimatePresence>
 
         {/* Add Account Card */}
-        <button
-          onClick={handleOpenAddDialog}
-          onMouseEnter={() => setAddDialogRequested(true)}
-          className="min-h-[220px] rounded-xl border-2 border-dashed border-border/50 flex flex-col items-center justify-center gap-2 text-muted-foreground hover:text-foreground hover:border-primary/40 hover:bg-primary/5 transition-all"
-        >
-          <Plus className="h-8 w-8" />
-          <span className="text-xs font-medium">{t('card.addAccount')}</span>
-        </button>
+        {!showCombinedEmptyState ? (
+          <button
+            onClick={handleOpenAddDialog}
+            onMouseEnter={() => setAddDialogRequested(true)}
+            className="min-h-[220px] rounded-xl border-2 border-dashed border-border/50 flex flex-col items-center justify-center gap-2 text-muted-foreground hover:text-foreground hover:border-primary/40 hover:bg-primary/5 transition-all"
+          >
+            <Plus className="h-8 w-8" />
+            <span className="text-xs font-medium">{t('card.addAccount')}</span>
+          </button>
+        ) : null}
 
         {addDialogRequested && (
           <Suspense fallback={null}>
@@ -505,6 +577,20 @@ export function AccountGrid({
               platforms={platforms}
               runtimeMode={runtimeMode}
               editingAccount={editingApiAccount}
+            />
+            <AddAccountDialog
+              hideTrigger
+              open={Boolean(cloningApiAccount)}
+              onOpenChange={(open) => {
+                if (!open) setCloningApiAccount(null);
+              }}
+              onAccountAdded={() => {
+                setCloningApiAccount(null);
+                onAccountAdded();
+              }}
+              platforms={platforms}
+              runtimeMode={runtimeMode}
+              cloningAccount={cloningApiAccount}
             />
           </Suspense>
         )}

@@ -27,6 +27,7 @@ interface AddAccountDialogProps {
   onOpenChange?: (open: boolean) => void;
   hideTrigger?: boolean;
   editingAccount?: Account | null;
+  cloningAccount?: Account | null;
 }
 
 type ScannedFile = {
@@ -236,6 +237,7 @@ export function AddAccountDialog({
   onOpenChange,
   hideTrigger = false,
   editingAccount = null,
+  cloningAccount = null,
 }: AddAccountDialogProps) {
   const modePlatforms = useMemo(
     () => (runtimeMode === 'claude'
@@ -272,6 +274,7 @@ export function AddAccountDialog({
   const isOpen = open ?? internalOpen;
   const setIsOpen = onOpenChange ?? setInternalOpen;
   const isEditingApiAccount = Boolean(editingAccount && editingAccount.provider_mode === 'api');
+  const isCloningApiAccount = Boolean(cloningAccount && cloningAccount.provider_mode === 'api');
   const savedApiKeyPreview = isEditingApiAccount ? maskApiKeyPreview((editingAccount as Account & { api_key?: string | null })?.api_key || '') : '';
 
   const resetApiForm = useCallback(() => {
@@ -329,8 +332,23 @@ export function AddAccountDialog({
       return;
     }
 
+    if (isCloningApiAccount && cloningAccount) {
+      setView('api');
+      setSelectedPlatform(modePlatforms.includes(cloningAccount.platform || '') ? cloningAccount.platform : defaultPlatform);
+      setApiForm({
+        account_id: cloningAccount.account_id ? `${cloningAccount.account_id}-copy` : '',
+        email: cloningAccount.email || '',
+        auth_type: cloningAccount.auth_type,
+        api_base_url: cloningAccount.api_base_url || '',
+        api_key: cloningAccount.api_key || '',
+        api_model: cloningAccount.api_model || '',
+        api_cli_config: cloningAccount.api_cli_config || '',
+      });
+      return;
+    }
+
     resetApiForm();
-  }, [defaultPlatform, editingAccount, isEditingApiAccount, isOpen, modePlatforms, resetApiForm]);
+  }, [cloningAccount, defaultPlatform, editingAccount, isCloningApiAccount, isEditingApiAccount, isOpen, modePlatforms, resetApiForm]);
 
   useEffect(() => {
     if (!modePlatforms.includes(selectedPlatform)) {
@@ -339,7 +357,7 @@ export function AddAccountDialog({
   }, [defaultPlatform, modePlatforms, selectedPlatform]);
 
   const handleOpen = () => {
-    if (isEditingApiAccount) {
+    if (isEditingApiAccount || isCloningApiAccount) {
       setView('api');
       setIsOpen(true);
       return;
@@ -500,12 +518,12 @@ export function AddAccountDialog({
       )}
 
       <Dialog open={isOpen} onOpenChange={setIsOpen}>
-        <DialogContent className="flex max-h-[88vh] max-w-[95vw] flex-col overflow-hidden sm:max-w-[520px]">
-          <DialogHeader>
-            <DialogTitle>{view === 'api' ? (isEditingApiAccount ? t('addAccount.apiEditTitle') : t('addAccount.apiTitle')) : t('addAccount.dialogTitle')}</DialogTitle>
+        <DialogContent className="max-w-[95vw] gap-0 overflow-visible p-0 sm:max-w-[560px]">
+          <DialogHeader className="shrink-0 border-b border-border/50 px-6 pb-4 pt-6 pr-12">
+            <DialogTitle>{view === 'api' ? (isEditingApiAccount ? t('addAccount.apiEditTitle') : isCloningApiAccount ? t('addAccount.apiCloneTitle') : t('addAccount.apiTitle')) : t('addAccount.dialogTitle')}</DialogTitle>
           </DialogHeader>
 
-          <div className="flex-1 overflow-y-auto pr-1">
+          <div className="max-h-[calc(88vh-152px)] overflow-y-auto overflow-x-visible px-6 py-5">
             {/* ── Login view ── */}
             {view === 'login' && (
               <LoginStep
@@ -734,14 +752,6 @@ export function AddAccountDialog({
                 </div>
               ) : null}
 
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setIsOpen(false)} disabled={adding}>
-                  {t('addAccount.cancel')}
-                </Button>
-                <Button onClick={handleAdd} disabled={adding || selected.size === 0}>
-                  {adding ? t('addAccount.submitting') : t('addAccount.addSelected', { count: selected.size })}
-                </Button>
-              </DialogFooter>
               </>
             )}
 
@@ -842,18 +852,26 @@ export function AddAccountDialog({
                   />
                 </div>
                 </div>
-
-                <DialogFooter>
-                  <Button variant="outline" onClick={() => setIsOpen(false)} disabled={adding}>
-                    {t('addAccount.cancel')}
-                  </Button>
-                  <Button onClick={handleAddApiAccount} disabled={adding}>
-                    {adding ? t('addAccount.submitting') : (isEditingApiAccount ? t('addAccount.saveApiAccount') : t('addAccount.addApiAccount'))}
-                  </Button>
-                </DialogFooter>
               </div>
             )}
           </div>
+
+          {view !== 'login' && (
+            <DialogFooter className="shrink-0 border-t border-border/50 bg-background px-6 py-4">
+              <Button variant="outline" onClick={() => setIsOpen(false)} disabled={adding}>
+                {t('addAccount.cancel')}
+              </Button>
+              {view === 'scan' ? (
+                <Button onClick={handleAdd} disabled={adding || selected.size === 0}>
+                  {adding ? t('addAccount.submitting') : t('addAccount.addSelected', { count: selected.size })}
+                </Button>
+              ) : (
+                <Button onClick={handleAddApiAccount} disabled={adding}>
+                  {adding ? t('addAccount.submitting') : (isEditingApiAccount ? t('addAccount.saveApiAccount') : isCloningApiAccount ? t('addAccount.cloneApiAccount') : t('addAccount.addApiAccount'))}
+                </Button>
+              )}
+            </DialogFooter>
+          )}
         </DialogContent>
       </Dialog>
     </>

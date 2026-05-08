@@ -7,11 +7,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { RefreshCw } from 'lucide-react';
+import { Download, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { formatAppError } from '@/lib/errors';
 import { useI18n } from '@/lib/i18n';
+import { type ModelCallLog } from '@/types';
 
 const DAY_OPTIONS = [1, 3, 7, 14, 30] as const;
 const PAGE_SIZE_OPTIONS = [25, 50, 100] as const;
@@ -45,6 +46,8 @@ interface PersistedModelCallsPageState {
   days: string;
   pageSize: string;
   searchQuery: string;
+  cwdFilter: string;
+  providerFilter: string;
 }
 
 function readPersistedModelCallsPageState(): PersistedModelCallsPageState | null {
@@ -58,10 +61,28 @@ function readPersistedModelCallsPageState(): PersistedModelCallsPageState | null
       days: typeof parsed.days === 'string' ? parsed.days : '7',
       pageSize: typeof parsed.pageSize === 'string' ? parsed.pageSize : '50',
       searchQuery: typeof parsed.searchQuery === 'string' ? parsed.searchQuery : '',
+      cwdFilter: typeof parsed.cwdFilter === 'string' ? parsed.cwdFilter : 'all',
+      providerFilter: typeof parsed.providerFilter === 'string' ? parsed.providerFilter : 'all',
     };
   } catch {
     return null;
   }
+}
+
+function summarizeItems(items: ModelCallLog[]) {
+  return items.reduce((summary, item) => ({
+    total_calls: summary.total_calls + 1,
+    input_tokens: summary.input_tokens + item.input_tokens,
+    cached_input_tokens: summary.cached_input_tokens + item.cached_input_tokens,
+    output_tokens: summary.output_tokens + item.output_tokens,
+    total_tokens: summary.total_tokens + item.total_tokens,
+  }), {
+    total_calls: 0,
+    input_tokens: 0,
+    cached_input_tokens: 0,
+    output_tokens: 0,
+    total_tokens: 0,
+  });
 }
 
 const ModelCallsPage = () => {
@@ -70,6 +91,8 @@ const ModelCallsPage = () => {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<string>(persistedState?.pageSize ?? '50');
   const [searchQuery, setSearchQuery] = useState(persistedState?.searchQuery ?? '');
+  const [cwdFilter, setCwdFilter] = useState(persistedState?.cwdFilter ?? 'all');
+  const [providerFilter, setProviderFilter] = useState(persistedState?.providerFilter ?? 'all');
   const navigate = useNavigate();
   const { t } = useI18n();
   const modelCallsQuery = useQuery({
@@ -83,6 +106,8 @@ const ModelCallsPage = () => {
   });
   const modelCalls = modelCallsQuery.data || null;
   const filteredItems = (modelCalls?.items || []).filter((item) => {
+    if (cwdFilter !== 'all' && (item.cwd || '') !== cwdFilter) return false;
+    if (providerFilter !== 'all' && (item.model_provider || 'unknown') !== providerFilter) return false;
     if (!searchQuery.trim()) return true;
     const search = searchQuery.toLowerCase();
     return [
@@ -92,8 +117,16 @@ const ModelCallsPage = () => {
       item.phase || '',
       item.summary || '',
       item.session_id,
+      item.cwd || '',
     ].some((value) => value.toLowerCase().includes(search));
   });
+  const providerOptions = Array.from(new Set(
+    (modelCalls?.items || [])
+      .map((item) => item.model_provider || 'unknown')
+      .filter(Boolean),
+  )).sort((a, b) => a.localeCompare(b, 'en'));
+  const visibleSummary = summarizeItems(filteredItems);
+  const hasActiveFilters = Boolean(searchQuery.trim()) || cwdFilter !== 'all' || providerFilter !== 'all';
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -101,8 +134,22 @@ const ModelCallsPage = () => {
       days,
       pageSize,
       searchQuery,
+      cwdFilter,
+      providerFilter,
     }));
-  }, [days, pageSize, searchQuery]);
+  }, [cwdFilter, days, pageSize, providerFilter, searchQuery]);
+
+  useEffect(() => {
+    if (cwdFilter !== 'all' && !modelCalls?.available_cwds.includes(cwdFilter)) {
+      setCwdFilter('all');
+    }
+  }, [cwdFilter, modelCalls?.available_cwds]);
+
+  useEffect(() => {
+    if (providerFilter !== 'all' && !providerOptions.includes(providerFilter)) {
+      setProviderFilter('all');
+    }
+  }, [providerFilter, providerOptions]);
 
   if (modelCallsQuery.isLoading || !modelCalls) {
     return <div className="flex-1 grid place-items-center text-sm text-muted-foreground">{t('loading.modelCalls')}</div>;
@@ -112,13 +159,32 @@ const ModelCallsPage = () => {
   const totalPages = Math.max(1, Math.ceil(filteredItems.length / numericPageSize));
   const safePage = Math.min(page, totalPages);
   const pagedItems = filteredItems.slice((safePage - 1) * numericPageSize, safePage * numericPageSize);
+  const handleExport = () => {
+    const payload = {
+      exported_at: new Date().toISOString(),
+      days: Number(days),
+      cwd: cwdFilter === 'all' ? null : cwdFilter,
+      provider: providerFilter === 'all' ? null : providerFilter,
+      search: searchQuery.trim() || null,
+      total: filteredItems.length,
+      items: filteredItems,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'model-calls-export.json';
+    link.click();
+    URL.revokeObjectURL(url);
+    toast.success(t('modelCalls.toast.exported', { count: formatNumber(filteredItems.length) }));
+  };
 
   const summaryCards = [
-    { key: 'calls', label: t('modelCalls.totalCalls'), value: formatNumber(modelCalls.summary.total_calls) },
-    { key: 'input', label: t('modelCalls.inputTokens'), value: formatNumber(modelCalls.summary.input_tokens) },
-    { key: 'cached', label: t('modelCalls.cachedTokens'), value: formatNumber(modelCalls.summary.cached_input_tokens) },
-    { key: 'output', label: t('modelCalls.outputTokens'), value: formatNumber(modelCalls.summary.output_tokens) },
-    { key: 'total', label: t('modelCalls.totalTokens'), value: formatNumber(modelCalls.summary.total_tokens) },
+    { key: 'calls', label: t('modelCalls.totalCalls'), value: formatNumber(visibleSummary.total_calls) },
+    { key: 'input', label: t('modelCalls.inputTokens'), value: formatNumber(visibleSummary.input_tokens) },
+    { key: 'cached', label: t('modelCalls.cachedTokens'), value: formatNumber(visibleSummary.cached_input_tokens) },
+    { key: 'output', label: t('modelCalls.outputTokens'), value: formatNumber(visibleSummary.output_tokens) },
+    { key: 'total', label: t('modelCalls.totalTokens'), value: formatNumber(visibleSummary.total_tokens) },
   ];
 
   return (
@@ -141,6 +207,44 @@ const ModelCallsPage = () => {
                 className="mt-5 h-8 w-56 text-xs bg-input border-border/50"
               />
               <div className="space-y-1">
+                <Label className="text-[11px] text-muted-foreground">{t('modelCalls.cwd')}</Label>
+                <Select value={cwdFilter} onValueChange={(value) => {
+                  setCwdFilter(value);
+                  setPage(1);
+                }}>
+                  <SelectTrigger className="h-8 w-48 text-xs bg-input border-border/50">
+                    <SelectValue placeholder={t('modelCalls.cwd')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">{t('modelCalls.cwd.all')}</SelectItem>
+                    {modelCalls.available_cwds.map((cwd) => (
+                      <SelectItem key={cwd} value={cwd}>
+                        {cwd}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px] text-muted-foreground">{t('modelCalls.provider')}</Label>
+                <Select value={providerFilter} onValueChange={(value) => {
+                  setProviderFilter(value);
+                  setPage(1);
+                }}>
+                  <SelectTrigger className="h-8 w-36 text-xs bg-input border-border/50">
+                    <SelectValue placeholder={t('modelCalls.provider')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">{t('modelCalls.provider.all')}</SelectItem>
+                    {providerOptions.map((provider) => (
+                      <SelectItem key={provider} value={provider}>
+                        {provider}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
                 <Label className="text-[11px] text-muted-foreground">{t('modelCalls.days')}</Label>
                 <Select value={days} onValueChange={(value) => {
                   setDays(value);
@@ -162,6 +266,16 @@ const ModelCallsPage = () => {
                 variant="outline"
                 size="sm"
                 className="mt-5 h-8 text-xs"
+                onClick={handleExport}
+                disabled={filteredItems.length === 0}
+              >
+                <Download className="mr-1 h-3.5 w-3.5" />
+                {t('modelCalls.export')}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-5 h-8 text-xs"
                 onClick={() => modelCallsQuery.refetch().catch((error: Error) => toast.error(formatAppError(error, t('modelCalls.error.refreshFailed'))))}
                 disabled={modelCallsQuery.isFetching}
               >
@@ -179,6 +293,23 @@ const ModelCallsPage = () => {
               </div>
             ))}
           </div>
+          {hasActiveFilters ? (
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+              <Badge variant="outline" className="h-5 rounded-full px-2 text-[10px] font-normal">
+                {t('modelCalls.filteredSummary')}
+              </Badge>
+              {cwdFilter !== 'all' ? (
+                <Badge variant="outline" className="h-5 rounded-full px-2 text-[10px] font-normal">
+                  {t('modelCalls.cwd')} · {cwdFilter}
+                </Badge>
+              ) : null}
+              {providerFilter !== 'all' ? (
+                <Badge variant="outline" className="h-5 rounded-full px-2 text-[10px] font-normal">
+                  {t('modelCalls.provider')} · {providerFilter}
+                </Badge>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
         <div className="flex-1 min-h-0 px-5 py-4">
@@ -254,7 +385,7 @@ const ModelCallsPage = () => {
                             ) : (
                               <p className="text-foreground">—</p>
                             )}
-                            <p className="text-[10px] text-muted-foreground">{item.phase || '—'}</p>
+                            <p className="text-[10px] text-muted-foreground">{item.cwd || item.phase || '—'}</p>
                           </div>
                         </TableCell>
                         <TableCell className="align-top">

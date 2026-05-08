@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { RightSidebar, type QuickActionKey, type QuickActionStatus } from '@/components/RightSidebar';
 import { AccountGrid } from '@/components/AccountGrid';
 import { PoolSettings, LiveUsageData } from '@/types';
@@ -7,42 +7,31 @@ import { api } from '@/lib/api';
 import { formatAppError } from '@/lib/errors';
 import { useI18n } from '@/lib/i18n';
 import { useAppShell } from '@/components/app-shell-context';
+import { useEditableSettings } from '@/hooks/use-editable-settings';
 
 const CHECK_ALL_USAGE_CONCURRENCY = 4;
 const BATCH_ACCOUNT_ACTION_CONCURRENCY = 4;
 
-function settingsSnapshot(settings: PoolSettings | null | undefined) {
-  return settings ? JSON.stringify(settings) : '';
-}
-
 const Index = () => {
   const [batchUsageMap, setBatchUsageMap] = useState<Record<string, LiveUsageData>>({});
-  const [settings, setSettings] = useState<PoolSettings | null>(null);
   const [tokenRefreshKey, setTokenRefreshKey] = useState(0);
   const [busyAction, setBusyAction] = useState<QuickActionKey | null>(null);
   const [actionStatus, setActionStatus] = useState<QuickActionStatus | null>(null);
   const { t } = useI18n();
   const shell = useAppShell();
   const accounts = shell.accounts;
-
-  // Settings debounce：300ms 内多次变更只保存最后一次
-  const settingsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    if (shell.settings) {
-      setSettings((prev) => {
-        if (!prev) return shell.settings;
-        if (settingsSnapshot(prev) === settingsSnapshot(shell.settings)) {
-          return prev;
-        }
-        if (settingsTimerRef.current) {
-          clearTimeout(settingsTimerRef.current);
-          settingsTimerRef.current = null;
-        }
-        return shell.settings;
-      });
-    }
-  }, [shell.settings]);
+  const {
+    settings,
+    saveStatus,
+    lastSavedAt,
+    replaceSettings,
+  } = useEditableSettings({
+    sourceSettings: shell.settings,
+    onAfterSave: shell.refreshShell,
+    onSaveError: (error) => {
+      toast.error(formatAppError(error, t('dashboard.error.saveSettingsFailed')));
+    },
+  });
 
   // ── 账号操作：直接传 action，不再让父组件猜 ──
 
@@ -82,6 +71,10 @@ const Index = () => {
     await shell.refreshShell();
   }, [shell]);
 
+  const handleRefreshPool = useCallback(async () => {
+    await shell.refreshShell();
+  }, [shell]);
+
   const handleClearAll = useCallback(async () => {
     try {
       await api.clearAllAccounts();
@@ -92,31 +85,9 @@ const Index = () => {
     }
   }, [shell, t]);
 
-  // ── Settings：debounce 保存 ──
-
   const handleSettingsChange = useCallback((nextSettings: PoolSettings) => {
-    setSettings(nextSettings);
-    // 清除之前的定时器
-    if (settingsTimerRef.current) {
-      clearTimeout(settingsTimerRef.current);
-    }
-    // 300ms 后才真正发送请求
-    settingsTimerRef.current = setTimeout(async () => {
-      try {
-        await api.updateSettings(nextSettings);
-        await shell.refreshShell();
-      } catch (error) {
-        toast.error(formatAppError(error, t('dashboard.error.saveSettingsFailed')));
-      }
-    }, 300);
-  }, [shell, t]);
-
-  // 清理定时器
-  useEffect(() => {
-    return () => {
-      if (settingsTimerRef.current) clearTimeout(settingsTimerRef.current);
-    };
-  }, []);
+    replaceSettings(nextSettings);
+  }, [replaceSettings]);
 
   const handleRotateNow = async () => {
     if (busyAction) return;
@@ -363,6 +334,7 @@ const Index = () => {
         onAccountAdded={handleAccountAdded}
         onAccountUpdated={handleAccountAdded}
         onClearAll={handleClearAll}
+        onRefreshPool={handleRefreshPool}
         onCheckAllUsage={handleCheckAllUsage}
         onPauseAccounts={handlePauseAccounts}
         batchActionsDisabled={Boolean(busyAction)}
@@ -380,6 +352,8 @@ const Index = () => {
         onCheckAllUsage={handleCheckAllUsage}
         busyAction={busyAction}
         actionStatus={actionStatus}
+        settingsSaveStatus={saveStatus}
+        settingsLastSavedAt={lastSavedAt}
       />
     </>
   );

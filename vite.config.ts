@@ -2,11 +2,14 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
 
-export default defineConfig(({ mode }) => ({
+export default defineConfig(({ mode }) => {
+  const configuredPort = Number(process.env.PORT || process.env.VITE_DEV_SERVER_PORT || 8080);
+
+  return ({
   base: mode === "production" ? "./" : "/",
   server: {
     host: "::",
-    port: 8080,
+    port: configuredPort,
     hmr: {
       overlay: false,
     },
@@ -23,4 +26,5 @@ export default defineConfig(({ mode }) => ({
       "@": path.resolve(__dirname, "./src"),
     },
   },
-}));
+  });
+});

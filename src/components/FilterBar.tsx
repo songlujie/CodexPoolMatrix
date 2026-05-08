@@ -15,6 +15,9 @@ interface FilterBarProps {
   activeCount: number;
   totalCount: number;
   filteredCount: number;
+  visibleCurrentCount: number;
+  visibleAbnormalCount: number;
+  visibleApiCount: number;
   selectedPlatform: string | 'all';
   onPlatformChange: (platform: string | 'all') => void;
   providerFilter: 'all' | 'oauth' | 'api';
@@ -34,15 +37,16 @@ interface FilterBarProps {
   onResetFilters?: () => void;
   hasActiveFilters?: boolean;
   lastRefresh: Date;
+  refreshing?: boolean;
   extraActions?: React.ReactNode;
 }
 
 export function FilterBar({
-  activeCount, totalCount, filteredCount, selectedPlatform, onPlatformChange,
+  activeCount, totalCount, filteredCount, visibleCurrentCount, visibleAbnormalCount, visibleApiCount, selectedPlatform, onPlatformChange,
   providerFilter, onProviderFilterChange,
   scopeFilter, onScopeFilterChange, sortBy, onSortByChange,
   platforms, onAddPlatform, onDeletePlatform,
-  searchQuery, onSearchChange, viewMode, onViewModeChange, onRefresh, onResetFilters, hasActiveFilters, lastRefresh, extraActions,
+  searchQuery, onSearchChange, viewMode, onViewModeChange, onRefresh, onResetFilters, hasActiveFilters, lastRefresh, refreshing = false, extraActions,
 }: FilterBarProps) {
   const { t } = useI18n();
   const [addingPlatform, setAddingPlatform] = useState(false);
@@ -79,7 +83,7 @@ export function FilterBar({
       <div className="flex min-w-0 flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
         <div className="flex min-w-0 flex-wrap items-center gap-3">
           <Badge variant="outline" className="h-5 text-[10px] text-primary border-primary/30 bg-primary/5">
-          {t('filter.active')}: {activeCount} / {totalCount}
+            {t('filter.active')}: {activeCount} / {totalCount}
           </Badge>
           {filteredCount !== totalCount ? (
             <Badge variant="outline" className="h-5 text-[10px] text-muted-foreground border-border/60 bg-secondary/30">
@@ -206,7 +210,7 @@ export function FilterBar({
             </button>
           </div>
           <Button variant="outline" size="sm" className="h-7 text-xs shrink-0" onClick={onRefresh}>
-            <RefreshCw className="mr-1.5 h-3 w-3" />
+            <RefreshCw className={`mr-1.5 h-3 w-3 ${refreshing ? 'animate-spin' : ''}`} />
             {t('filter.refresh')}
           </Button>
           {onResetFilters ? (
@@ -223,6 +227,18 @@ export function FilterBar({
           ) : null}
           {extraActions}
         </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+        <Badge variant="outline" className="h-5 rounded-full px-2 text-[10px] font-normal">
+          {t('filter.visibleCurrent', { count: visibleCurrentCount })}
+        </Badge>
+        <Badge variant="outline" className="h-5 rounded-full px-2 text-[10px] font-normal">
+          {t('filter.visibleAbnormal', { count: visibleAbnormalCount })}
+        </Badge>
+        <Badge variant="outline" className="h-5 rounded-full px-2 text-[10px] font-normal">
+          {t('filter.visibleApi', { count: visibleApiCount })}
+        </Badge>
+        <span>{t('filter.lastRefresh', { time: lastRefresh.toLocaleTimeString() })}</span>
       </div>
     </div>
   );

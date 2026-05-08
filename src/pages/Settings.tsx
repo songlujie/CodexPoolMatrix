@@ -1,4 +1,4 @@
-import { type ChangeEvent, useEffect, useRef, useState } from 'react';
+import { type ChangeEvent, useRef } from 'react';
 import { Upload } from 'lucide-react';
 import { Account, PoolSettings } from '@/types';
 import { Button } from '@/components/ui/button';
@@ -11,10 +11,7 @@ import { api } from '@/lib/api';
 import { formatAppError } from '@/lib/errors';
 import { useI18n } from '@/lib/i18n';
 import { useAppShell } from '@/components/app-shell-context';
-
-function settingsSnapshot(settings: PoolSettings | null | undefined) {
-  return settings ? JSON.stringify(settings) : '';
-}
+import { useEditableSettings } from '@/hooks/use-editable-settings';
 
 function downloadJson(filename: string, payload: unknown) {
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
@@ -27,89 +24,37 @@ function downloadJson(filename: string, payload: unknown) {
 }
 
 const SettingsPage = () => {
-  const [settings, setSettings] = useState<PoolSettings | null>(null);
-  const [saving, setSaving] = useState(false);
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const accountsImportRef = useRef<HTMLInputElement | null>(null);
   const configImportRef = useRef<HTMLInputElement | null>(null);
   const { t } = useI18n();
   const shell = useAppShell();
   const accounts = shell.accounts;
+  const {
+    settings,
+    saveStatus,
+    lastSavedAt,
+    update,
+    replaceSettings,
+    saveNow,
+  } = useEditableSettings({
+    sourceSettings: shell.settings,
+    onAfterSave: shell.refreshShell,
+    onSaveError: (error) => {
+      toast.error(formatAppError(error, t('settings.error.saveFailed')));
+    },
+  });
   const runtimeMode = settings?.mode ?? 'codex';
   const runtimePathLabel = runtimeMode === 'claude' ? t('right.claudePath') : t('right.codexPath');
   const runtimePathHint = runtimeMode === 'claude' ? t('right.claudePathHint') : t('right.codexPathHint');
   const runtimePathValue = runtimeMode === 'claude' ? (settings?.claude_path ?? '') : (settings?.codex_path ?? '');
 
-  useEffect(() => {
-    if (shell.settings) {
-      setSettings((prev) => {
-        if (!prev) return shell.settings;
-        if (settingsSnapshot(prev) === settingsSnapshot(shell.settings)) {
-          return prev;
-        }
-        if (saveTimerRef.current) {
-          clearTimeout(saveTimerRef.current);
-          saveTimerRef.current = null;
-        }
-        return shell.settings;
-      });
-    }
-  }, [shell.settings]);
-
-  const persistSettings = async (nextSettings: PoolSettings) => {
-    try {
-      setSaving(true);
-      const savedSettings = await api.updateSettings(nextSettings);
-      setSettings(savedSettings);
-      await shell.refreshShell();
-      return true;
-    } catch (error) {
-      toast.error(formatAppError(error, t('settings.error.saveFailed')));
-      return false;
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const scheduleSave = (nextSettings: PoolSettings) => {
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current);
-    }
-
-    saveTimerRef.current = setTimeout(() => {
-      void persistSettings(nextSettings);
-    }, 300);
-  };
-
-  const update = (partial: Partial<PoolSettings>) => {
-    if (!settings) return;
-    const nextSettings = { ...settings, ...partial };
-    setSettings(nextSettings);
-    scheduleSave(nextSettings);
-  };
-
   const saveCurrentSettings = async () => {
     if (!settings) return;
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = null;
-    }
-    try {
-      const ok = await persistSettings(settings);
-      if (!ok) return;
+    const ok = await saveNow();
+    if (ok) {
       toast.success(t('settings.toast.saved'));
-    } catch (error) {
-      toast.error(formatAppError(error, t('settings.error.saveFailed')));
     }
   };
-
-  useEffect(() => {
-    return () => {
-      if (saveTimerRef.current) {
-        clearTimeout(saveTimerRef.current);
-      }
-    };
-  }, []);
 
   const handleExportAccounts = () => {
     downloadJson('accounts-export.json', {
@@ -220,7 +165,8 @@ const SettingsPage = () => {
         ...nextSettings,
         updated_at: settings.updated_at,
       };
-      const ok = await persistSettings(normalizedSettings);
+      replaceSettings(normalizedSettings, { scheduleSave: false });
+      const ok = await saveNow(normalizedSettings);
       if (!ok) return;
       toast.success(t('settings.toast.configImported'));
     } catch (error) {
@@ -274,15 +220,31 @@ const SettingsPage = () => {
     return null;
   }
 
+  const saveStatusLabel = saveStatus === 'error'
+    ? t('common.saveFailed')
+    : saveStatus === 'saved'
+      ? t('common.saved')
+      : saveStatus === 'saving'
+        ? t('common.saving')
+        : saveStatus === 'pending'
+          ? t('common.unsavedChanges')
+          : t('common.noPendingChanges');
+  const saveTimeLabel = lastSavedAt
+    ? t('common.lastSavedAt', { time: new Date(lastSavedAt).toLocaleTimeString() })
+    : null;
+
   return (
     <div className="flex-1 overflow-y-auto p-6">
       <div className="mb-6 flex items-center justify-between gap-3">
         <div>
           <h2 className="text-sm font-semibold text-foreground">{t('settings.title')}</h2>
           <p className="mt-1 text-xs text-muted-foreground">{t('settings.savedHint')}</p>
+          <p className="mt-2 text-xs text-muted-foreground">
+            {saveStatusLabel}{saveTimeLabel ? ` · ${saveTimeLabel}` : ''}
+          </p>
         </div>
-        <Button size="sm" className="h-8 text-xs" onClick={saveCurrentSettings} disabled={saving}>
-          {saving ? t('settings.saving') : t('settings.save')}
+        <Button size="sm" className="h-8 text-xs" onClick={saveCurrentSettings} disabled={saveStatus === 'saving'}>
+          {saveStatus === 'saving' ? t('settings.saving') : t('settings.save')}
         </Button>
       </div>
 

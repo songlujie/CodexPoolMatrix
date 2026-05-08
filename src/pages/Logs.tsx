@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { LogLevel } from '@/types';
 import { Button } from '@/components/ui/button';
@@ -24,6 +24,29 @@ const levelColors: Record<LogLevel, string> = {
 const LOG_FETCH_LIMIT_OPTIONS = [100, 200, 500, 1000] as const;
 const PAGE_SIZE_OPTIONS = [25, 50, 100] as const;
 const LOGS_PAGE_STATE_KEY = 'cpm-logs-page-state';
+const DEFAULT_LEVEL_FILTER = 'all';
+const DEFAULT_ACCOUNT_FILTER = 'all';
+const DEFAULT_FETCH_LIMIT = '200';
+const DEFAULT_PAGE_SIZE = '50';
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function highlightMatch(text: string, query: string): ReactNode {
+  const trimmedQuery = query.trim();
+  if (!trimmedQuery) return text;
+
+  const pattern = new RegExp(`(${escapeRegExp(trimmedQuery)})`, 'ig');
+  const parts = text.split(pattern);
+  const normalizedQuery = trimmedQuery.toLowerCase();
+
+  return parts.map((part, index) => (
+    part.toLowerCase() === normalizedQuery
+      ? <mark key={`${part}-${index}`} className="rounded bg-warning/20 px-0.5 text-foreground">{part}</mark>
+      : part
+  ));
+}
 
 interface PersistedLogsPageState {
   levelFilter: LogLevel | 'all';
@@ -75,6 +98,12 @@ const LogsPage = () => {
   });
   const logs = logsQuery.data || [];
   const accounts = shell.accounts;
+  const levelCounts = {
+    all: logs.length,
+    info: logs.filter((log) => log.level === 'info').length,
+    warn: logs.filter((log) => log.level === 'warn').length,
+    error: logs.filter((log) => log.level === 'error').length,
+  };
   const filteredLogs = logs.filter((log) => {
     if (!searchQuery.trim()) return true;
     const search = searchQuery.toLowerCase();
@@ -91,6 +120,17 @@ const LogsPage = () => {
   const pagedLogs = filteredLogs.slice((safePage - 1) * numericPageSize, safePage * numericPageSize);
   const pageStart = filteredLogs.length === 0 ? 0 : (safePage - 1) * numericPageSize + 1;
   const pageEnd = filteredLogs.length === 0 ? 0 : pageStart + pagedLogs.length - 1;
+  const hasActiveFilters = levelFilter !== DEFAULT_LEVEL_FILTER
+    || accountFilter !== DEFAULT_ACCOUNT_FILTER
+    || fetchLimit !== DEFAULT_FETCH_LIMIT
+    || pageSize !== DEFAULT_PAGE_SIZE
+    || searchQuery.trim().length > 0;
+  const levelCards: Array<{ key: LogLevel | 'all'; label: string; value: number }> = [
+    { key: 'all', label: t('logs.allLevels'), value: levelCounts.all },
+    { key: 'info', label: t('logs.level.info'), value: levelCounts.info },
+    { key: 'warn', label: t('logs.level.warn'), value: levelCounts.warn },
+    { key: 'error', label: t('logs.level.error'), value: levelCounts.error },
+  ];
 
   useEffect(() => {
     if (!autoScroll) return;
@@ -139,14 +179,24 @@ const LogsPage = () => {
   };
 
   const handleExport = () => {
-    const blob = new Blob([JSON.stringify(logs, null, 2)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify(filteredLogs, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = 'logs.json';
+    link.download = 'logs-filtered.json';
     link.click();
     URL.revokeObjectURL(url);
-    toast.success(t('logs.toast.exported'));
+    toast.success(t('logs.toast.exported', { count: filteredLogs.length }));
+  };
+
+  const handleResetFilters = () => {
+    setLevelFilter(DEFAULT_LEVEL_FILTER);
+    setAccountFilter(DEFAULT_ACCOUNT_FILTER);
+    setFetchLimit(DEFAULT_FETCH_LIMIT);
+    setPageSize(DEFAULT_PAGE_SIZE);
+    setSearchQuery('');
+    setAutoScroll(true);
+    setPage(1);
   };
 
   const handleClear = async () => {
@@ -165,6 +215,31 @@ const LogsPage = () => {
 
   return (
     <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+      <div className="border-b border-border/50 bg-gradient-to-b from-background via-background to-secondary/10 px-4 py-2">
+        <div className="flex flex-wrap gap-2.5">
+          {levelCards.map((card) => (
+            <button
+              key={card.key}
+              type="button"
+              onClick={() => handleFilterChange(card.key, accountFilter)}
+              className={`flex items-center gap-2 rounded-full border px-2.5 py-1 text-left transition-all duration-200 ${
+                levelFilter === card.key
+                  ? 'border-primary/40 bg-primary/10 text-primary'
+                  : 'border-border/60 bg-background/70 text-muted-foreground hover:border-border hover:bg-card hover:text-foreground'
+              }`}
+            >
+              <span className="text-[11px] font-medium">{card.label}</span>
+              <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums ${
+                levelFilter === card.key
+                  ? 'bg-primary/15 text-primary'
+                  : 'bg-secondary/70 text-foreground/80'
+              }`}>
+                {card.value}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
       <div className="flex items-center justify-between p-4 border-b border-border/50 flex-wrap gap-2">
         <h2 className="text-sm font-semibold text-foreground">{t('logs.title')}</h2>
         <div className="flex items-center gap-3">
@@ -217,6 +292,26 @@ const LogsPage = () => {
             variant="outline"
             size="sm"
             className="h-7 text-xs"
+            onClick={() => {
+              handleFilterChange('error', accountFilter);
+              setPage(1);
+            }}
+          >
+            {t('logs.onlyErrors')}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs"
+            onClick={handleResetFilters}
+            disabled={!hasActiveFilters}
+          >
+            {t('logs.reset')}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs"
             onClick={() => logsQuery.refetch().catch((error: Error) => toast.error(formatAppError(error, t('logs.error.refreshFailed'))))}
             disabled={logsQuery.isFetching}
           >
@@ -225,7 +320,7 @@ const LogsPage = () => {
           <Button variant="outline" size="sm" className="h-7 text-xs" onClick={handleClear}>
             <Trash2 className="h-3 w-3 mr-1" />{t('logs.clear')}
           </Button>
-          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={handleExport}>
+          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={handleExport} disabled={filteredLogs.length === 0}>
             <Download className="h-3 w-3 mr-1" />{t('logs.export')}
           </Button>
         </div>
@@ -275,11 +370,11 @@ const LogsPage = () => {
                       className="truncate text-left hover:underline"
                       title={t('common.openInDashboard')}
                     >
-                      {log.account_name}
+                      {highlightMatch(log.account_name, searchQuery)}
                     </button>
                   ) : '—'}
                 </span>
-                <span className="min-w-0 break-words text-foreground/80">{log.message}</span>
+                <span className="min-w-0 break-words text-foreground/80">{highlightMatch(log.message, searchQuery)}</span>
               </div>
             ))}
           </div>
